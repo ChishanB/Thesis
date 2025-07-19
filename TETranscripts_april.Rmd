@@ -1,0 +1,1266 @@
+---
+title: "TEtranscripts_april"
+author: "Chishan Burch"
+date: "2025-04-14"
+output: html_document
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+## Method
+
+1.  Create ID conversion table from the
+    'TE_and_gene_counts_Updated_and_raw.txt' (see screenshot below, I
+    believe you should have this file somewhere). So that you can
+    convert ensembl ID to gene symbol along with chromosome info etc.
+
+2.  Get raw count TE transcript data (Together)
+
+3.  Run QC (Together)
+
+4.  PCA plots with prcomp -- 1 x ALL, 1 x Gene, 1 x TE,
+
+5.  PCA plots with DESeq2:plotPCA() -- 1 x ALL, 1 x Gene, 1 x TE
+
+6.  (Leave 6 and 15 for end)Identify which genes/TEs were used in plotPCA() (step 5) and save in
+    a table for later use -- 1 x ALL, 1 x Gene, 1 x TE
+
+7.  Run Deseq (Together)
+
+8.  Save DE results table (Together) - add (left join) gene information
+    onto results i.e. gene symbol chromosome etc. (from step 1).
+
+9.  Volcano plots (from step 7/8 DE results) showing those that are
+    FDR\<0.05 -- 1 x Gene, 1 x TE
+
+10. MA plots (from step 7/8 DE results) colour coded to mark genes that
+    are FDR\<0.05 -- 1 x Gene, 1 x TE
+
+11. Gene Ontology on DE hits -- FDR \< 0.05 -- generate plots
+
+12. KEGG on DE hits -- FDR \< 0.05 -- generate plots - looks like you'll
+    need to convert ensembl IDs to entrez ID.
+
+    **Preparation for mixOmics:**
+
+13. Normalise raw counts by TMM (Together).
+
+14. PCA plots of TMM (step 12) with prcomp -- 1 x ALL, 1 x Gene, 1 x TE
+
+15. (Leave 6 and 15 for end) Filter TMM data frame for the ones identified by plotPCA (step 5/6)
+    and plot with prcomp() -- 1 x ALL, 1 x Gene, 1 x TE.
+
+16. Boxplot of the counts. 1x raw counts, 1 x TMM. X-axis is samples.
+    Coloured by treatment. See link below for an example (plot showing
+    'before norm' and 'after norm')\
+    ([https://qfab-bioinformatics.github.io/workshops-RNAseq-analysis-with-R/normalisation.html#defining-the-model-matrix](https://url.au.m.mimecastprotect.com/s/hCJVC6XQM5CrmmXAxH6h6c5VheH?domain=qfab-bioinformatics.github.io "https://url.au.m.mimecastprotect.com/s/hCJVC6XQM5CrmmXAxH6h6c5VheH?domain=qfab-bioinformatics.github.io"))
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+library(enrichplot)
+library(cluster)
+library(dplyr)
+library(tidyr)
+library(openxlsx)
+library(data.table)
+library(edgeR)
+library(tibble)
+library(ggplot2)
+library(ggrepel)
+library(DESeq2)
+library(clusterProfiler)
+library(BiocGenerics)
+```
+
+1.  Create ID conversion table from the
+    'TE_and_gene_counts_Updated_and_raw.txt' to convert ensembl ID to
+    gene symbol.
+
+```{r , echo=FALSE}
+# 1. Get raw count TE transcript data
+dt <- fread(file = "./1_data/Transcriptomics/TE_and_gene_counts_Updated_and_Raw.txt") 
+
+conversion_table <- dt %>% dplyr::select("ensembl.TE","hgnc.TE")
+```
+
+```{r}
+head(conversion_table)
+```
+
+2.  Get raw count TE transcript data (Together)
+
+3.  Run QC (Together)
+
+    ```{r, echo = FALSE}
+
+    # 1. Get raw count TE transcript data
+    dt <- fread(file = "./1_data/Transcriptomics/TE_and_gene_counts_Updated_and_Raw.txt") # all
+    dt_TEs <- fread(file = "./1_data/Transcriptomics/TE_only_and_all_counts.txt") # TEs
+
+    # 2. Run QC
+    # # Removing uneeded rows and setting rownames
+
+    dt_genes <- dt[Type == "gene"] #genes
+
+    dt_genes <- dt_genes[, -c(2:13)]
+    dt_genes <- column_to_rownames(dt_genes, var = "ensembl.TE")
+
+    dt <- dt[, -c(2:13)]
+    dt <- column_to_rownames(dt, var = "ensembl.TE")
+
+    dt_TEs <- dt_TEs[,-c(2:5)]
+    dt_TEs <- column_to_rownames(dt_TEs, var = "ensembl.TE")
+
+
+    min.counts <- 5
+    min.samples <- 3
+
+    # # Filtering step
+    dt <- dt %>%
+      filter(rowSums(. >= min.counts) >= min.samples)
+
+    dt_TEs <- dt_TEs%>%
+      filter(rowSums(. >= min.counts) >= min.samples)
+
+    dt_genes <- dt_genes%>%
+      filter(rowSums(. >= min.counts) >= min.samples)
+
+
+    # # Remove rows containing NA values
+    if (any(is.na(dt))) {
+      dt <- dt[complete.cases(dt), ]
+    }
+
+    if (any(is.na(dt_TEs))) {
+      dt_TEs <- dt_TEs[complete.cases(dt_TEs), ]
+    }
+
+    if (any(is.na(dt_genes))) {
+      dt_genes <- dt_genes[complete.cases(dt_genes), ]
+    }
+
+    # Save the tables for DESeq2 in step 3
+
+    #all
+    #write.csv(dt, file = "./3_results/transcriptomic_rerun_matrix.csv", row.names = TRUE)
+    #TEs
+    #write.csv(dt_TEs, file = "./3_results/transcriptomic_rerun_matrix_TEs.csv", row.names = TRUE)
+    #genes
+    #write.csv(dt_genes, file = "./3_results/transcriptomic_rerun_matrix_genes.csv", row.names = TRUE)
+    ```
+
+4.  PCA plots with prcomp -- 1 x ALL, 1 x Gene, 1 x TE
+
+```{r, echo = FALSE}
+
+    # A = Acrylamide, P = Control
+sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
+
+sample_metadata$Treatment_group <- as.factor(sample_metadata$Treatment_group)
+    levels(sample_metadata$Treatment_group)
+
+    #level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+
+
+level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+
+# All
+df <- as.data.frame(dt)
+# Genes
+df_genes <- as.data.frame(dt_genes)
+# TEs
+df_TEs <- as.data.frame(dt_TEs)
+
+# Create PCA data frames
+## TEs and genes
+all_PCA <- prcomp(t(df), center = TRUE)
+pca_data <- data.frame(all_PCA$x)
+pca_data$SampleID <- rownames(pca_data)
+
+# Genes
+gene_PCA <- prcomp(t(df_genes), center = TRUE)
+pca_data_genes <- data.frame(gene_PCA$x)
+pca_data_genes$SampleID <- rownames(pca_data_genes)
+
+# TEs
+TE_PCA <- prcomp(t(df_TEs), center = TRUE)
+pca_data_TEs <- data.frame(TE_PCA$x)
+pca_data_TEs$SampleID <- rownames(pca_data_TEs)
+
+# Ensure SampleID column exists in sample_metadata and matches pca_data
+sample_metadata$SampleID <- as.character(sample_metadata$SampleID)
+
+# Merge Treatment_group into pca_data using SampleID as the key
+pca_data <- merge(pca_data, sample_metadata[, c("SampleID", "Treatment_group")], by = "SampleID", all.x = TRUE)
+
+pca_data_genes <- merge(pca_data_genes, sample_metadata[, c("SampleID", "Treatment_group")], by = "SampleID", all.x = TRUE)
+
+pca_data_TEs <- merge(pca_data_TEs, sample_metadata[, c("SampleID", "Treatment_group")], by = "SampleID", all.x = TRUE)
+
+# Debug: Check if Treatment_group has been added correctly
+#if ("Treatment_group" %in% colnames(pca_data)) {
+#  print("Treatment_group successfully added to pca_data")
+#} else {
+#  print("Error: Treatment_group not added")
+#}
+
+# Vareince explained
+variance_explained_all <- 100 * all_PCA$sdev^2 / sum(all_PCA$sdev^2)
+variance_explained_genes <- 100 * gene_PCA$sdev^2 / sum(gene_PCA$sdev^2)
+variance_explained_TEs <- 100 * TE_PCA$sdev^2 / sum(TE_PCA$sdev^2)
+
+# Plotting
+TEsandgenes_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV (TEs and Genes)",
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained_all[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained_all[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal()
+
+# plot the genes PCA
+genes_PCA <- ggplot(pca_data_genes, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV Protein-Coding Genes",
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained_genes[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained_genes[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal()
+
+# plot the TEs PCA
+TEs_PCA <- ggplot(pca_data_TEs, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV Transposable Elements",
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained_TEs[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained_TEs[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal()
+
+```
+
+```{r}
+plot(TEsandgenes_PCA)
+plot(genes_PCA)
+plot(TEs_PCA)
+```
+
+5.  PCA plots with DESeq2:plotPCA() -- 1 x ALL, 1 x Gene, 1 x TE
+
+    ```{r, echo = FALSE}
+
+
+
+    # Create the DESeqDataSet
+    dds <- DESeqDataSetFromMatrix(countData = dt, 
+                                  colData = sample_metadata, 
+                                  design = ~ Treatment_group)
+
+    dds$Treatment_group <- relevel(dds$Treatment_group, ref = "Control")
+
+    dds <- DESeq(dds)
+
+    # Apply the transformation (rlog or vst)
+    rld_all <- rlog(dds)  # or vst(dds)
+    
+    
+
+    # Perform PCA and extract data
+    plotPCA_data <- plotPCA(rld_all, intgroup = "Treatment_group", returnData = TRUE)
+
+    # Add sample names from colData
+    plotPCA_data$SampleID <- rownames(plotPCA_data)
+
+    percent_variance <- round(100 * attr(plotPCA_data, "percentVar"))
+
+    # Create PCA plot with sample names as labels
+    TEsandgenes_PCA2 <- ggplot(plotPCA_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+      geom_point(size = 3) +  # Plot points
+      geom_text(aes(label = SampleID), hjust = 0.5, vjust = -1) +  # Add labels
+      labs(title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV (TEs and Genes)", x = paste0("PC1 (", percent_variance[1], "%)"),  
+        y = paste0("PC2 (", percent_variance[2], "%)")) + 
+      scale_colour_manual(values = level_colors) +
+      theme_gray()
+      
+    
+    ##### TROUBLESHOOTING
+     # Create the DESeqDataSet
+    #dds <- DESeqDataSetFromMatrix(countData = dt, 
+    #                              colData = sample_metadata, 
+    #                              design = ~ Treatment_group)
+
+    #dds$Treatment_group <- relevel(dds$Treatment_group, ref = "Control")
+
+    #dds <- DESeq(dds)
+
+    # Apply the transformation (rlog or vst)
+    #rld <- rlog(dds)  # or vst(dds)
+    #vst <- vst(dds) 
+    #plotPCA(rld, intgroup = "Treatment_group")
+    #plotPCA(vst, intgroup = "Treatment_group")
+   
+    ####
+      
+    ######### Now for the genes ###########################################################
+
+    # Create the DESeqDataSet
+    dds_genes <- DESeqDataSetFromMatrix(countData = dt_genes, 
+                                  colData = sample_metadata, 
+                                  design = ~ Treatment_group)
+
+    dds_genes$Treatment_group <- relevel(dds_genes$Treatment_group, ref = "Control")
+
+    dds_genes <- DESeq(dds_genes)
+
+    # Apply the transformation (rlog or vst)
+    rld_genes <- rlog(dds_genes)  # or vst(dds)
+
+    # Perform PCA and extract data
+    plotPCA_data_genes <- plotPCA(rld_genes, intgroup = "Treatment_group", returnData = TRUE)
+
+    # Add sample names from colData
+    plotPCA_data_genes$SampleID <- rownames(plotPCA_data_genes)
+
+    percent_variance <- round(100 * attr(plotPCA_data_genes, "percentVar"))
+
+    # Create PCA plot with sample names as labels
+    genes_PCA2 <- ggplot(plotPCA_data_genes, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+      geom_point(size = 3) +  # Plot points
+      geom_text(aes(label = SampleID), hjust = 0.5, vjust = -1) +  # Add labels
+      labs(title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV (Genes)", x = paste0("PC1 (", percent_variance[1], "%)"),  
+        y = paste0("PC2 (", percent_variance[2], "%)")) + 
+      scale_colour_manual(values = level_colors) +
+      theme_gray()
+      
+    ############### Now for the TEs ###############################################
+    # Create the DESeqDataSet
+    dds_TEs <- DESeqDataSetFromMatrix(countData = dt_TEs, 
+                                  colData = sample_metadata, 
+                                  design = ~ Treatment_group)
+
+    dds_TEs$Treatment_group <- relevel(dds_TEs$Treatment_group, ref = "Control")
+
+    dds_TEs <- DESeq(dds_TEs)
+
+    # Apply the transformation (rlog or vst)
+    rld_TEs <- rlog(dds_TEs)  # or vst(dds)
+
+    # Perform PCA and extract data
+    plotPCA_data_TEs <- plotPCA(rld_TEs, intgroup = "Treatment_group", returnData = TRUE)
+
+    # Add sample names from colData
+    plotPCA_data_TEs$SampleID <- rownames(plotPCA_data_TEs)
+
+    percent_variance <- round(100 * attr(plotPCA_data_TEs, "percentVar"))
+
+    # Create PCA plot with sample names as labels
+    TEs_PCA2 <- ggplot(plotPCA_data_TEs, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+      geom_point(size = 3) +  # Plot points
+      geom_text(aes(label = SampleID), hjust = 0.5, vjust = -1) +  # Add labels
+      labs(title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV (TEs)", x = paste0("PC1 (", percent_variance[1], "%)"),  
+        y = paste0("PC2 (", percent_variance[2], "%)")) + 
+      scale_colour_manual(values = level_colors) +
+      theme_gray()
+    ```
+
+```{r}
+plot(TEsandgenes_PCA2)
+plot(genes_PCA2)
+plot(TEs_PCA2)
+```
+
+
+
+6.  Identify which genes/TEs were used in plotPCA() (step 5) and save in
+    a table for later use -- 1 x ALL, 1 x Gene, 1 x TE.
+
+    ```{r, echo=FALSE, include = FALSE}
+
+    
+    # plotPCA() takes a subset of the genes (top 500 variables), and that is what Sean was asking to take out
+    # plotPCA() is a wrapper (like most functions), using prcomp() and more.
+    # Try experimentig with the plotPCA() function 
+    
+   # https://github.com/thelovelab/DESeq2/blob/devel/R/plots.R
+    
+  # Setting ntop to 500 because this is what plotPCA() uses as default
+  ntop <- 500
+    
+  # calculate the variance for each gene
+  rv_all <- rowVars(assay(rld_all))
+  rv_genes <- rowVars(assay(rld_genes))
+  rv_TEs <- rowVars(assay(rld_TEs))
+ 
+# select the ntop genes by variance
+select1 <- order(rv_all, decreasing=TRUE)[seq_len(min(ntop, length(rv_all)))]
+select2 <- order(rv_genes, decreasing=TRUE)[seq_len(min(ntop, length(rv_genes)))] 
+select3 <- order(rv_TEs, decreasing=TRUE)[seq_len(min(ntop, length(rv_TEs)))] 
+
+  # Subset row names using select
+selected_features1 <- rownames(rld_all)[select1]
+selected_features2 <- rownames(rld_genes)[select2]
+selected_features3 <- rownames(rld_TEs)[select3]
+
+
+# Save all features
+#write.table(selected_features1, file = "./3_results/plotPCA_all.txt", 
+#            row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+# Save genes only
+#write.table(selected_features2, file = "./3_results/plotPCA_genes.txt", 
+#            row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+# Save TEs only
+#write.table(selected_features3, file = "./3_results/plotPCA_TEs.txt", 
+#            row.names = FALSE, col.names = FALSE, quote = FALSE)
+
+    
+    ```
+
+7.  Run Deseq (Together)
+
+8.  Save DE results table (Together) - add (left join) gene information
+    onto results i.e. gene symbol chromosome etc. (from step 1).
+
+    ```{r, echo = FALSE, include = FALSE}
+    # Get the results
+    res <- results(dds)
+    res_genes <- results(dds_genes)
+    res_TEs <- results(dds_TEs)
+
+    # View a summary of the results
+    summary(res)
+    summary(res_genes)
+    summary(res_TEs)
+
+    # Add the alternate gene ids onto the deseq results for the gene + TE group
+    print(conversion_table)
+
+    res_dt <- as.data.table(res, keep.rownames = TRUE)
+
+    res_dt <- res_dt %>%
+      dplyr::rename(ensembl.TE = rn)
+
+    res_dt <- left_join(res_dt, conversion_table, by = "ensembl.TE")
+
+    #Save
+    #write.csv(res_dt, file = "./3_results/april_DESeq_genesandTEs.csv", row.names = TRUE)
+
+    # These ones do not have the alternate gene names included
+    #write.csv(res_genes, file = "./3_results/april_DESeq_genes.csv", row.names = TRUE)
+    #write.csv(res_TEs, file = "./3_results/april_DESeq_TEs.csv", row.names = TRUE)
+
+
+    ```
+
+9.  Volcano plots (from step 7/8 DE results) showing those that are
+    FDR\<0.05 -- 1 x Gene, 1 x TE
+
+    ```{r, echo = FALSE, include = FALSE}
+
+    # Add a column labelling whether miRNAs are upregulated or downregulated
+    res_dt <- res_dt %>%
+      mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                               if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+    # Create a -log10 column for y-axis of volcano plots
+    res_dt <- res_dt %>% mutate(log_padj = -log10(padj))
+
+
+    #Separate mRNA rows from TE rows so we can plot them separately
+
+    # Filter rows with Ensembl IDs
+    mRNA_rows <- res_dt[grepl("^ENSMUSG\\d+$", res_dt$ensembl.TE), ]
+
+    # Filter rows without Ensembl IDs (TEs)
+    TE_rows <- res_dt[!grepl("^ENSMUSG\\d+$", res_dt$ensembl.TE), ]
+
+    # View results
+    print(head(mRNA_rows))  # First few rows of mRNAs
+    print(head(TE_rows))    # First few rows of TEs
+
+    ################# Troubleshoot
+    # Filter rows with padj < 0.05
+    significant_rows <- TE_rows[padj < 0.05, ]
+
+    # View the resulting rows
+    print(significant_rows)
+    #################
+
+    # Declare colours
+    colours_1 <- c("Sign_Up" = "#994455", "Sign_Down" = "#0077BB", "NS" = "#BBBBBB") 
+
+    opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 1)
+
+    # Declare padj threshold
+    p_adj_threshold <- 0.05
+    options(ggrepel.max.overlaps = Inf)
+
+
+    plot_1 <- res_dt %>%
+      filter(is.na(sign_DE) != TRUE) %>%
+      ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+      geom_point(size = 5, shape = 21, color = "black") +
+      geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+      scale_color_manual(
+        values = colours_1,
+        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      scale_fill_manual(
+        values = colours_1,
+        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      scale_alpha_manual(
+        values = opacity,
+        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      labs(
+        title = "Volcano Plot of Differential Expression (Genes and TEs)",       # Plot title
+        x = "Log2 Fold Change",                                       # X-axis label
+        y = "-Log10 Adjusted P-value",                                # Y-axis label
+        color = "Effect in treated group",                            # Legend title for color
+        fill = "Effect in treated group",                             # Legend title for fill
+        alpha = "Effect in treated group"                             # Legend title for alpha
+      ) +
+      theme_bw() +
+      theme(
+        axis.text = element_text(size = 12), 
+        axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), 
+        legend.title = element_text(size = 14)
+      )
+    ################################
+    plot_2 <- mRNA_rows %>%
+      filter(is.na(sign_DE) != TRUE) %>%
+      ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+      geom_point(size = 5, shape = 21, color = "black") +
+      geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+      scale_color_manual(
+        values = colours_1,
+        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      scale_fill_manual(
+        values = colours_1,
+        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      scale_alpha_manual(
+        values = opacity,
+        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      labs(
+        title = "Volcano Plot of Differential Expression (Genes)",       # Plot title
+        x = "Log2 Fold Change",                                       # X-axis label
+        y = "-Log10 Adjusted P-value",                                # Y-axis label
+        color = "Effect in treated group",                            # Legend title for color
+        fill = "Effect in treated group",                             # Legend title for fill
+        alpha = "Effect in treated group"                             # Legend title for alpha
+      ) +
+      theme_bw() +
+      theme(
+        axis.text = element_text(size = 12), 
+        axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), 
+        legend.title = element_text(size = 14)
+      )
+    ###################################################
+    plot_3 <- TE_rows %>%
+      filter(is.na(sign_DE) != TRUE) %>%
+      ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+      geom_point(size = 5, shape = 21, color = "black") +
+      geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+      scale_color_manual(
+        values = colours_1,
+        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      scale_fill_manual(
+        values = colours_1,
+        labels = c("Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      scale_alpha_manual(
+        values = opacity,
+        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+      ) +
+      labs(
+        title = "Volcano Plot of Differential Expression (TEs)",       # Plot title
+        x = "Log2 Fold Change",                                       # X-axis label
+        y = "-Log10 Adjusted P-value",                                # Y-axis label
+        color = "Effect in treated group",                            # Legend title for color
+        fill = "Effect in treated group",                             # Legend title for fill
+        alpha = "Effect in treated group"                             # Legend title for alpha
+      ) +
+      theme_bw() +
+      theme(
+        axis.text = element_text(size = 12), 
+        axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), 
+        legend.title = element_text(size = 14)
+      )
+    ```
+
+```{r}
+plot(plot_1)
+plot(plot_2)
+plot(plot_3)
+
+```
+
+10. MA plots (from step 7/8 DE results) colour coded to mark genes that
+    are FDR\<0.05 -- 1 x Gene, 1 x TE
+
+    ```{r, echo = FALSE, include = FALSE}
+
+      
+    # MA plots colour coded to mark genes that are FDR<0.05 – 1 x Gene, 1 x TE
+
+    gene_subset <- res[grep("^ENSMUSG\\d+$", rownames(res)), ]
+    # Reverse grep to get rows that do NOT match the pattern
+    TE_subset <- res[!grepl("^ENSMUSG\\d+$", rownames(res)), ]
+
+
+    #pdf("gene_MA_plot.pdf") 
+    # This function highlights points with FDR or padj < 0.05 in blue.
+    plotMA(gene_subset)
+    #dev.off()  
+
+
+    ## WHYYYY AM I GETTING 4 HIGHLIGHTED BLUE POINTS HERE
+    plotMA(TE_subset)
+
+    # Filter DESeq2 results to keep only those with padj < 0.05
+    significant_results <- TE_subset[!is.na(TE_subset$padj) & TE_subset$padj < 0.05, ]
+
+    ## WHY IS THERE 2 SIGNIFICANT HERE WHEN I ONLY HAD 1 IN MY VOLCANO PLOT!!!
+    # View the subset of significant results
+    head(significant_results)
+
+    ```
+
+11. Gene Ontology on DE hits – FDR \< 0.05 – generate plots.
+
+```{r, echo = FALSE, include = FALSE}
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+
+# Using mRNA_rows dt created in step 9
+
+########### mRNA_rows was already filtered for padj < / = 0.05, so we need to change the background list to include ALLL of the genes cause right now it only has the significant ones. Need to overwrite spreas=dheet result, images are fine
+
+if (any(is.na(mRNA_rows))) {
+  mRNA_rows <- mRNA_rows[complete.cases(mRNA_rows), ]
+}
+
+mRNA_rows_significant <- mRNA_rows %>%
+  filter(padj <= 0.05)
+
+# Set up mouse db
+organism = org.Mm.eg.db
+
+
+#BiocManager::install(organism, character.only = TRUE)
+
+#library(organism, character.only = TRUE)
+
+#BiocManager::install(c(
+#  "fansi", "vctrs"
+#), update = TRUE, ask = FALSE, force = TRUE)
+
+
+gene_names <- mRNA_rows_significant %>%
+  dplyr::select("ensembl.TE")
+
+genes <- fread(file = "./1_data/Transcriptomics/TE_and_gene_counts_Updated_and_Raw.txt")
+background_gene_names <- genes %>%
+  dplyr::select("ensembl.TE")
+
+# Already done earlier
+gene_names <- na.omit(gene_names) 
+
+hit_list <- as.vector(gene_names$ensembl.TE)
+background_list <- as.vector(background_gene_names$ensembl.TE)
+
+
+# Step 2 - Create/run EnrichGo
+
+go_enrich <- enrichGO(gene = hit_list,
+                      universe = background_list,
+                      OrgDb = organism, 
+                      keyType = 'ENSEMBL',
+                      readable = T,
+                      ont = "BP",
+                      pvalueCutoff = 0.05, 
+                      qvalueCutoff = 0.10)
+
+
+
+
+
+# Step 3  - Extract and save results table
+
+go_results <- go_enrich@result
+go_results$GeneRatio <- gsub("/","//",go_results$GeneRatio)
+go_results$BgRatio <- gsub("/","//",go_results$BgRatio)
+
+
+#write.xlsx(go_results, file = "./3_results/TEtranscripts_GOenrich.xlsx")
+
+################################################################################################################
+
+library(clusterProfiler)
+
+## Save table
+
+# Step 4 - Plots
+## Bar plot
+barplot <- barplot(go_enrich,
+        title = "GO Biological Pathways")
+
+plot(barplot)
+#ggsave(file = "./2_figures/TEtranscripts_GO_barplot.png")
+
+
+## Dot plot
+enrichplot::dotplot(go_enrich)
+
+#ggsave(file = "./2_figures/TEtranscripts_GO_dotplot.png")
+
+## To remove/account for redundant parent pathways (all those terms belonging to the same general functional group)
+edox2 <- pairwise_termsim(go_enrich)
+
+### Tree plots
+p1 <- treeplot(edox2, offset = 10)
+plot(p1)
+
+#ggsave("./2_figures/TEtranscripts_GO_treeplot1.png", plot = p1, width = 15, height = 6, #units = "in", dpi = 300)
+
+p2 <- treeplot(edox2, hclust_method = "average", offset = 10)
+plot(p2)
+
+#ggsave("./2_figures/TEtranscripts_GO_treeplot2.png", plot = p2, width = 15, height = 6, #units = "in", dpi = 300)
+
+p3 <- treeplot(edox2, offset = 7,
+               nCluster = 5, # default is 5. Changes number of groups clustered
+               showCategory = 10)  # Number of 'top terms' that will be grouped and displayed in the plot
+plot(p3)
+
+#ggsave("./2_figures/TEtranscripts_GO_treeplot3.png", plot = p3, width = 15, height = 6, #units = "in", dpi = 300)
+
+```
+
+12. KEGG on DE hits – FDR \< 0.05 – generate plots - looks like you'll
+    need to convert ensembl IDs to entrez ID.
+
+
+    ```{r, echo = FALSE, include = FALSE}
+
+    
+
+#library(org.Mm.eg.db)
+#library(AnnotationDbi)
+ 
+  
+  #################### Also troubleshooting 
+    
+# Using mRNA_rows_significant created in step 10
+KEGG_gene_names <- mRNA_rows_significant %>%
+  dplyr::select("ensembl.TE")  
+    
+
+ensembl_ids <- KEGG_gene_names$ensembl.TE
+ensembl_ids <- as.character(ensembl_ids)
+
+
+## Alternative to using bitr()
+#mapped <- mapIds(org.Mm.eg.db,
+#                 keys = ensembl_ids,
+#                 column = "ENTREZID",
+#                 keytype = "ENSEMBL",
+#                 multiVals = "first")
+
+
+
+organism <- org.Mm.eg.db    
+
+    genes <- fread(file = "./1_data/Transcriptomics/TE_and_gene_counts_Updated_and_Raw.txt")
+
+    # Isolating the gene names instead of the ensembl ids.
+
+    # Using mRNA_rows_significant created in step 10
+    KEGG_gene_names <- mRNA_rows_significant %>%
+      dplyr::select("ensembl.TE")
+
+    KEGG_background_gene_names <- genes %>%
+      dplyr::select("ensembl.TE")
+
+
+    KEGG_hit_list <- as.vector(KEGG_gene_names$ensembl.TE)
+    KEGG_background_list <- as.vector(KEGG_background_gene_names$ensembl.TE)
+    
+length(intersect(KEGG_hit_list, KEGG_background_list)) 
+# 190 overlaps
+
+    # Convert gene names to KEGG IDs
+    KEGG_hit_list <- bitr(
+      KEGG_hit_list,
+      fromType = "ENSEMBL",  # Source ID type (e.g., HGNC symbol)
+      toType = "ENTREZID",      # Target ID type
+      OrgDb = organism  
+    )
+
+     KEGG_background_list <- bitr(
+      KEGG_background_list,
+      fromType = "ENSEMBL",  # Source ID type (e.g., HGNC symbol)
+      toType = "ENTREZID",      # Target ID type
+      OrgDb = organism  
+    )
+    
+  KEGG_hit_list <- as.vector(KEGG_hit_list$ENTREZID)
+  KEGG_background_list <- as.vector(KEGG_background_list$ENTREZID)
+  
+KEGG_enrichment_results <- enrichKEGG(
+  gene = KEGG_hit_list,
+  universe = KEGG_background_list,
+  organism = "mmu",  # Mouse
+  keyType = "kegg",  # Key type in KEGG
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05
+)
+####
+KEGG_enrichment_results <- enrichKEGG(
+  gene = KEGG_hit_list,
+  universe = KEGG_background_list,
+  organism = "mmu",  # Mouse
+  keyType = "kegg",  # Key type in KEGG
+  pvalueCutoff = 0.05,
+  pAdjustMethod = "none",
+  qvalueCutoff = 1
+)
+###
+barplot(KEGG_enrichment_results, showCategory = 20)
+#dotplot(KEGG_enrichment_results)
+
+dotplot(KEGG_enrichment_results, color = "pvalue")
+#x <- as.data.frame(KEGG_enrichment_results@result)
+
+    ```
+```{r}
+barplot(KEGG_enrichment_results, showCategory = 20)
+#dotplot(KEGG_enrichment_results)
+
+dotplot(KEGG_enrichment_results, color = "pvalue")
+#x <- as.data.frame(KEGG_enrichment_results@result)
+```
+
+
+
+13. Normalise raw counts by TMM (Together).
+    
+```{r, echo = FALSE}
+
+
+# This was already done. Process is shown below using the same variables 'dt, dt_genes and dt_TEs' created in step 3.
+
+#counts <- dt
+
+# # Assuming 'counts' is a matrix of raw count data with genes as rows and samples as columns
+# # Create a DGEList object
+#y <- DGEList(counts = counts)
+
+# # Perform TMM normalization
+#y <- calcNormFactors(y)
+
+# # Get the normalised counts
+#TMM_matrix <- cpm(y, prior.count = 1, normalized.lib.sizes = TRUE)
+
+# # Save them. They will be used for PCA plots.
+#write.csv(TMM_matrix, file = "./3_results/transcriptomic_rerun_TMM_matrix.csv", row.names = TRUE)
+
+#counts <- dt_TEs
+
+#y <- DGEList(counts = counts)
+
+#y <- calcNormFactors(y)
+
+#TMM_TE_matrix <- cpm(y, normalized.lib.sizes = TRUE)
+#write.csv(TMM_TE_matrix, file = "./3_results/transcriptomic_rerun_TMM_matrix_TEs.csv", row.names = TRUE)
+
+#counts <- dt_genes
+
+#y <- DGEList(counts = counts)
+
+#y <- calcNormFactors(y)
+
+#TMM_gene_matrix <- cpm(y, prior.count = 1, normalized.lib.sizes = TRUE)
+#write.csv(TMM_gene_matrix, file = "./3_results/transcriptomic_rerun_TMM_matrix_genes.csv", row.names = TRUE)
+
+
+
+```
+
+
+14. PCA plots of TMM (step 12) with prcomp -- 1 x ALL, 1 x Gene, 1 x TE
+```{r, echo = FALSE}
+
+
+counts <- dt
+
+# # Assuming 'counts' is a matrix of raw count data with genes as rows and samples as columns
+# # Create a DGEList object
+y <- DGEList(counts = counts)
+
+# # Perform TMM normalization
+y <- calcNormFactors(y)
+
+# # Get the normalised counts
+TMM_matrix <- cpm(y, normalized.lib.sizes = TRUE)
+
+# # Save them. They will be used for PCA plots.
+#write.csv(TMM_matrix, file = "./3_results/transcriptomic_rerun_TMM_matrix.csv", row.names = TRUE)
+
+counts <- dt_TEs
+
+y <- DGEList(counts = counts)
+
+y <- calcNormFactors(y)
+
+TMM_TE_matrix <- cpm(y, normalized.lib.sizes = TRUE)
+#write.csv(TMM_TE_matrix, file = "./3_results/transcriptomic_rerun_TMM_matrix_TEs.csv", row.names = TRUE)
+
+counts <- dt_genes
+
+y <- DGEList(counts = counts)
+
+y <- calcNormFactors(y)
+
+TMM_gene_matrix <- cpm(y, normalized.lib.sizes = TRUE)
+#write.csv(TMM_gene_matrix, file = "./3_results/transcriptomic_rerun_TMM_matrix_genes.csv", row.names = TRUE)
+
+
+# 3. PCA plots – 1 x Gene, 1 x TE, 1 x ALL 
+
+# Start plotting
+# Perform PCA
+all_PCA <- prcomp(t(TMM_matrix), center = FALSE)
+
+TE_PCA <- prcomp(t(TMM_TE_matrix), center = FALSE)
+
+gene_PCA <- prcomp(t(TMM_gene_matrix), center = FALSE)
+
+# Create PCA data frame
+pca_data <- data.frame(all_PCA$x)
+pca_data$SampleID <- rownames(pca_data)
+
+# Ensure SampleID is a common column for merging
+if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadata)) {
+  pca_data <- merge(pca_data, sample_metadata, by = "SampleID")
+} else {
+  stop("Column 'SampleID' not found in one of the data frames.")
+}
+
+# Set colors for the groups
+level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+
+
+# Plot 
+all_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+
+# Extract percentage of variance explained
+variance_explained <- 100 * all_PCA$sdev^2 / sum(all_PCA$sdev^2)
+
+
+# Create PCA plot using ggplot2
+TEsandgenes_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +  # Add shading with `fill` and `stroke` for border thickness
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV (TEs and Genes)",
+       color = "Treatment group", 
+       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"), 
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal() 
+
+#ggsave("./2_figures/TEsandgenes_PCA.png", plot = TEsandgenes_PCA, width = 8, height = 4, dpi = 300)
+
+# Create PCA data frame
+pca_data <- data.frame(TE_PCA$x)
+pca_data$SampleID <- rownames(pca_data)
+
+# Ensure SampleID is a common column for merging
+if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadata)) {
+  pca_data <- merge(pca_data, sample_metadata, by = "SampleID")
+} else {
+  stop("Column 'SampleID' not found in one of the data frames.")
+}
+
+# Set colors for the groups
+level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+
+
+# Plot 
+TE_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+
+# Extract percentage of variance explained
+variance_explained <- 100 * TE_PCA$sdev^2 / sum(TE_PCA$sdev^2)
+
+
+# Create PCA plot using ggplot2
+TE_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +  # Add shading with `fill` and `stroke` for border thickness
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(title = "Dimensionality Reduction Reveals Minimal Variability Between Acrylamide and Control Samples in SV Transposable Elements",
+       color = "Treatment group", 
+       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"), 
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal() 
+
+#ggsave("./2_figures/TE_PCA.png", plot = TE_PCA, width = 8, height = 4, dpi = 300)
+
+# Create PCA data frame
+pca_data <- data.frame(gene_PCA$x)
+pca_data$SampleID <- rownames(pca_data)
+
+# Ensure SampleID is a common column for merging
+if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadata)) {
+  pca_data <- merge(pca_data, sample_metadata, by = "SampleID")
+} else {
+  stop("Column 'SampleID' not found in one of the data frames.")
+}
+
+# Set colors for the groups
+level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+
+
+# Plot 
+gene_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+
+# Extract percentage of variance explained
+variance_explained <- 100 * gene_PCA$sdev^2 / sum(gene_PCA$sdev^2)
+
+
+# Create PCA plot using ggplot2
+gene_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +  # Add shading with `fill` and `stroke` for border thickness
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV protein-coding genes",
+       color = "Treatment group", 
+       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"), 
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal() 
+
+#ggsave("./2_figures/gene_PCA.png", plot = gene_PCA, width = 8, height = 4, dpi = 300)
+
+plot(gene_PCA)
+plot(TE_PCA)
+plot(TEsandgenes_PCA)
+
+```
+
+15. (Leave 6 and 15 for end) Filter TMM data frame for the ones identified by plotPCA (step 5/6)
+    and plot with prcomp() -- 1 x ALL, 1 x Gene, 1 x TE.
+```{r, echo = FALSE}
+# Importing TMM dataset described in step 13.
+TMM_matrix <- fread("./3_results/transcriptomic_rerun_TMM_matrix.csv")
+TMM_gene_matrix <- fread("./3_results/transcriptomic_rerun_TMM_matrix_genes.csv")
+TMM_TE_matrix <- fread("./3_results/transcriptomic_rerun_TMM_matrix_TEs.csv")
+
+TMM_matrix <- as.data.frame(TMM_matrix)
+TMM_gene_matrix <- as.data.frame(TMM_gene_matrix)
+TMM_TE_matrix <- as.data.frame(TMM_TE_matrix)
+
+# Filter rows based on the selected_features1 vector
+TMM_matrix <- TMM_matrix %>%
+  filter(V1 %in% selected_features1)
+
+TMM_gene_matrix <- TMM_gene_matrix %>%
+filter(V1 %in% selected_features2)
+
+TMM_TE_matrix <- TMM_TE_matrix %>%
+  filter(V1 %in% selected_features3)
+
+# 500 each as expected 
+
+TMM_matrix <- TMM_matrix %>%
+  column_to_rownames("V1")
+
+TMM_gene_matrix <- TMM_gene_matrix %>%
+  column_to_rownames("V1")
+
+TMM_TE_matrix <- TMM_TE_matrix %>%
+  column_to_rownames("V1")
+
+# Create PCA data frames
+## TEs and genes
+TMM_matrix <- prcomp(t(TMM_matrix), center = TRUE)
+pca_data <- data.frame(TMM_matrix$x)
+pca_data$SampleID <- rownames(pca_data)
+
+# Genes
+TMM_gene_matrix <- prcomp(t(TMM_gene_matrix), center = TRUE)
+pca_data_genes <- data.frame(TMM_gene_matrix$x)
+pca_data_genes$SampleID <- rownames(pca_data_genes)
+
+# TEs
+TMM_TE_matrix <- prcomp(t(TMM_TE_matrix), center = TRUE)
+pca_data_TEs <- data.frame(TMM_TE_matrix$x)
+pca_data_TEs$SampleID <- rownames(pca_data_TEs)
+
+# Ensure SampleID column exists in sample_metadata and matches pca_data
+sample_metadata$SampleID <- as.character(sample_metadata$SampleID)
+
+# Merge Treatment_group into pca_data using SampleID as the key
+pca_data <- merge(pca_data, sample_metadata[, c("SampleID", "Treatment_group")], by = "SampleID", all.x = TRUE)
+
+pca_data_genes <- merge(pca_data_genes, sample_metadata[, c("SampleID", "Treatment_group")], by = "SampleID", all.x = TRUE)
+
+pca_data_TEs <- merge(pca_data_TEs, sample_metadata[, c("SampleID", "Treatment_group")], by = "SampleID", all.x = TRUE)
+
+# Debug: Check if Treatment_group has been added correctly
+if ("Treatment_group" %in% colnames(pca_data)) {
+  print("Treatment_group successfully added to pca_data")
+} else {
+  print("Error: Treatment_group not added")
+}
+
+# Vareince explained
+variance_explained_all <- 100 * TMM_matrix$sdev^2 / sum(TMM_matrix$sdev^2)
+variance_explained_genes <- 100 * TMM_gene_matrix$sdev^2 / sum(TMM_gene_matrix$sdev^2)
+variance_explained_TEs <- 100 * TMM_TE_matrix$sdev^2 / sum(TMM_TE_matrix$sdev^2)
+
+# Plotting
+TEsandgenes_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV (TEs and Genes)",
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained_all[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained_all[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal()
+
+# plot the genes PCA
+genes_PCA <- ggplot(pca_data_genes, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV Protein-Coding Genes",
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained_genes[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained_genes[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal()
+
+# plot the TEs PCA
+TEs_PCA <- ggplot(pca_data_TEs, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV Transposable Elements",
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained_TEs[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained_TEs[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal()
+
+
+plot(TEsandgenes_PCA)
+plot(genes_PCA)
+plot(TEs_PCA)
+
+```
+    
+16. Boxplot of the counts. 1x raw counts, 1 x TMM. X-axis is samples.
+    Coloured by treatment. See link below for an example (plot showing
+    'before norm' and 'after norm')\
+    ([https://qfab-bioinformatics.github.io/workshops-RNAseq-analysis-with-R/normalisation.html#defining-the-model-matrix](https://url.au.m.mimecastprotect.com/s/hCJVC6XQM5CrmmXAxH6h6c5VheH?domain=qfab-bioinformatics.github.io "https://url.au.m.mimecastprotect.com/s/hCJVC6XQM5CrmmXAxH6h6c5VheH?domain=qfab-bioinformatics.github.io"))
+    
+```{r, echo=FALSE}
+# Importing TMM dataset described in step 13.
+TMM_matrix <- fread("./3_results/transcriptomic_rerun_TMM_matrix.csv")
+
+TMM_matrix <- column_to_rownames(TMM_matrix, var = "V1")
+
+
+    dt <- fread(file = "./1_data/Transcriptomics/TE_and_gene_counts_Updated_and_Raw.txt") # all
+
+    dt <- dt[, -c(2:13)]
+    dt <- column_to_rownames(dt, var = "ensembl.TE")
+
+    min.counts <- 5
+    min.samples <- 3
+
+    # # Filtering step
+    dt <- dt %>%
+      filter(rowSums(. >= min.counts) >= min.samples)
+
+    # # Remove rows containing NA values
+    if (any(is.na(dt))) {
+      dt <- dt[complete.cases(dt), ]
+    }
+
+    # Example: dt
+dt_long <- dt %>%
+  rownames_to_column(var = "Gene") %>% # Convert rownames to a column
+  pivot_longer(
+    cols = -Gene, # All columns except "Gene"
+    names_to = "Sample", 
+    values_to = "Expression"
+  )
+
+# Boxplot for dt
+ggplot(dt_long, aes(x = Sample, y = log2(Expression + 1))) +
+  geom_boxplot() +
+  labs(title = "Counts (quality checked, not standardised, log2)", x = "Sample", y = "Expression") +
+  theme_minimal()
+
+# Example: TMM_matrix
+TMM_long <- TMM_matrix %>%
+  rownames_to_column(var = "Gene") %>%
+  pivot_longer(
+    cols = -Gene,
+    names_to = "Sample",
+    values_to = "Expression"
+  )
+
+
+# Boxplot for TMM_matrix
+ggplot(TMM_long, aes(x = Sample, y = log2(Expression + 1))) +
+  geom_boxplot() +
+  labs(title = "Counts (TMM standardised, log2)", x = "Sample", y = "Expression") +
+  theme_minimal()
+
+# as seen in the link Sean sent, I'm supposed to log2 the raw counts and the TMM counts (it helps with skewing)
+
+
+```
+
+    
+    
