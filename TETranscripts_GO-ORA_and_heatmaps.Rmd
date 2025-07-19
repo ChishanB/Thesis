@@ -1,0 +1,189 @@
+---
+title: "TETranscripts_GO-ORA_and_heatmaps"
+author: "Chishan Burch"
+date: "2025-02-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# install required packages
+#BiocManager::install("clusterProfiler")
+#BiocManager::install("enrichplot")
+#BiocManager::install("AnnotationDbi")
+#BiocManager::install("org.Mm.eg.db")
+
+
+#BiocManager::install(c(
+#  "fansi", "vctrs"
+#), update = TRUE, ask = FALSE, force = TRUE)
+
+library(clusterProfiler)
+library(enrichplot)
+library(data.table)
+library(dplyr)
+library(AnnotationDbi)
+library(org.Mm.eg.db)
+library(ggplot2)
+library(openxlsx)
+
+
+```
+
+## 1. GO-ORA / Enrichment analysis
+
+Retrieve DESEq2 genes list that was generated in TEtranscripts_results.Rmd and used this for GO-ORA.
+
+```{r}
+genes <- read.csv("./3_results/genes_only_DESeq.csv")
+
+if (any(is.na(genes))) {
+  genes <- genes[complete.cases(genes), ]
+}
+
+genes <- genes %>%
+  filter(padj <= 0.05)
+
+```
+
+```{r, echo=FALSE, include=FALSE}
+
+organism = org.Mm.eg.db
+
+
+#BiocManager::install(organism, character.only = TRUE)
+
+#library(organism, character.only = TRUE)
+
+#BiocManager::install(c(
+#  "fansi", "vctrs"
+#), update = TRUE, ask = FALSE, force = TRUE)
+
+
+gene_names <- genes %>%
+  dplyr::select("X")
+
+gene_names <- na.omit(gene_names)
+
+hit_list <- as.vector(gene_names$X)
+
+
+background_genes <- read.xlsx("./1_data/Transcriptomics/TE_and_gene_counts_Updated_and_Raw.xlsx")
+
+# The TEs do not have ensemble ids, so they mess with the go enrich process cause ensemble ids are required. 
+# Hence, select for rows containing genes. 
+background_gene <- background_genes %>%
+  filter(Type == "gene")
+
+if (any(is.na(background_gene))) {
+  background_gene <- background_gene[complete.cases(background_gene), ]
+}
+
+background_gene_names <- background_genes %>%
+  dplyr::select("ensembl.TE")
+
+background_gene_names <- na.omit(background_gene_names)
+
+background_list <- as.vector(background_gene_names$ensembl.TE)
+
+
+############# Troubleshooting
+
+#setdiff(hit_list, background_list)  # Elements in vector1 not in vector2
+#setdiff(background_list, hit_list)  # Elements in vector2 not in vector1
+
+# Remove spaces and standardize case
+#hit_list <- trimws(toupper(hit_list))  
+#background_list <- trimws(toupper(background_list))
+
+
+#overlap <- intersect(hit_list, background_list)
+#print(overlap)
+
+
+#cleaned_vector <- gsub("[[:space:]]", "", hit_list)
+#cleaned_vector <- gsub("[[:cntrl:]]", "", hit_list)
+#cleaned_vector <- gsub("[^[:print:]]", "", hit_list)
+
+##########
+
+
+# Step 2 - Create/run EnrichGo
+
+go_enrich <- enrichGO(gene = hit_list,
+                      universe = background_list,
+                      OrgDb = organism, 
+                      keyType = 'ENSEMBL',
+                      readable = T,
+                      ont = "BP",
+                      pvalueCutoff = 0.05, 
+                      qvalueCutoff = 0.10)
+
+
+
+
+# "If there's 'hits' that don't reach p.adj but are p<0.05 you can change the 
+# adj.method ="none" and try the tree plot then. Just to have a look."
+#go_enrich <- enrichGO(gene = hit_list,
+#                      universe = background_list,
+#                      OrgDb = organism, 
+ #                     keyType = 'ENSEMBL',
+#                      readable = T,
+#                      ont = "BP",
+#                      pvalueCutoff = 0.05, 
+##                      qvalueCutoff = 0.10,
+#                      pAdjustMethod = "none")
+
+# Step 3  - Extract and save results table
+
+go_results <- go_enrich@result
+go_results$GeneRatio <- gsub("/","//",go_results$GeneRatio)
+go_results$BgRatio <- gsub("/","//",go_results$BgRatio)
+
+
+#write.xlsx(go_results, file = "./3_results/TEtranscripts_GOenrich.xlsx")
+
+################################################################################################################
+
+
+## Save table
+
+# Step 4 - Plots
+## Bar plot
+barplot <- barplot(go_enrich,
+        title = "GO Biological Pathways")
+
+#ggsave(file = "./2_figures/TEtranscripts_GO_barplot.png")
+
+
+## Dot plot
+enrichplot::dotplot(go_enrich)
+
+#ggsave(file = "./2_figures/TEtranscripts_GO_dotplot.png")
+
+## To remove/account for redundant parent pathways (all those terms belonging to the same general functional group)
+edox2 <- pairwise_termsim(go_enrich)
+
+### Tree plots
+p1 <- treeplot(edox2, offset = 10)
+plot(p1)
+
+#ggsave("./2_figures/TEtranscripts_GO_treeplot1.png", plot = p1, width = 15, height = 6, #units = "in", dpi = 300)
+
+
+
+p2 <- treeplot(edox2, hclust_method = "average", offset = 10)
+plot(p2)
+
+#ggsave("./2_figures/TEtranscripts_GO_treeplot2.png", plot = p2, width = 15, height = 6, #units = "in", dpi = 300)
+
+p3 <- treeplot(edox2, offset = 7,
+               nCluster = 5, # default is 5. Changes number of groups clustered
+               showCategory = 10)  # Number of 'top terms' that will be grouped and displayed in the plot
+plot(p3)
+
+#ggsave("./2_figures/TEtranscripts_GO_treeplot3.png", plot = p3, width = 15, height = 6, #units = "in", dpi = 300)
+
+
+```

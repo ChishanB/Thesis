@@ -1,0 +1,763 @@
+---
+title: "BGI_vs_MM_DE_analysis"
+author: "Chishan Burch"
+date: "2025-02-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE, 
+  warning = FALSE, 
+  echo = TRUE, 
+  results = 'hide'
+)
+
+```
+
+```{r, echo=FALSE, message=FALSE}
+
+library(data.table)
+library(dplyr)
+library(tibble)
+library(DESeq2)
+library(ggplot2)
+library(openxlsx)
+library(pheatmap)
+library(ggrepel)
+library(edgeR)
+
+placement_data <- read.xlsx("./1_data/og_placement_data.xlsx")
+sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
+
+```
+
+February 10th, 2025
+
+## Background
+
+In my placement project, the results of DESeq2 analysis on BGI genomics' results indicated that many small RNAs were diferentially expressed, meeting significance thresholds of p-adj \< 0.05.
+
+During my Honours, I ran DESeq2 on the miRMaster results, which indicated that none were significantly deferentially expressed. This work was completed in the file miRMaster_DE_analyses.Rmd.
+
+In that document, DESeq2 analyses were performed on individual small RNA classes, and then on all small RNA types at once. In both cases, no small RNAs met the significance threshold.
+
+The top 6 small RNAs closest to being significantly differentially expressed (closest to possessing padj \< 0.05) in the BGI and miRMaster datasets were different for each dataset.
+
+This indicated that the BGI and miRMaster pipelines operate differently.
+
+## Purpose
+
+The purpose of this document is to examine and compare the structures of the dataset after analysis with miRMaster's pipeline and BGI genomics' own pipeline.
+
+A volcano plot was constructed to identify whether the results from my placement project could be replicated. The results were indeed the same, as shown in the volcano plot in this document (there are 3 versions of the same plot, the parameters are identical but the labelling is different because there are challenges with interpreting the plot when there are too many labels on it).
+
+To further explore the differences between the miRMaster and BGI results, 5 miRNAs which passed basic filtering (at least 5 counts across at least 3 samples, no NA values, passed all of DESeq2's built in filtering) in both datasets were identified for further examination. Both datasets were TMM-normalised, then the normalised counts of mmu-miR-145a-5p in each dataset were be compared using a bar plot.
+
+## Note
+
+It is highly suspected that the novel piRNAs labelled in the volcano plot are isomiRs / miRNA variants. As discussed in my placement project, piRNAs have a unique structure which can occasionally cause them to be labelled incorrectly.
+
+## Key for volcano plots
+
+-   padj ≤ 0.05 & log2FoldChange ≤ -0.585 = sign down
+
+-   padj ≤ 0.05 & log2FoldChange ≥ 0.585 = sign up
+
+-   padj ≥ 0.05 = NS (coloured grey)
+
+x - axis = log2FoldChange y - axis = -log10(padj)
+
+```{r, echo=FALSE, message=FALSE}
+# Remove columns by name
+placement_data <- placement_data %>% select(-sRNA.id, -Type, -Description, -Average.A_count, -Blanks, -A2_TPM, -A3_TPM, -A4_TPM, -A5_TPM, -Average.A_TPM, -Blank, -Average, -P1_TPM, -P3_TPM, -P4_TPM, -P5_TPM)
+
+# Set the columns as the row names 
+placement_data <- placement_data %>%
+  tibble::column_to_rownames(var = "sRNA.ID_type")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+placement_data <- placement_data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(placement_data))) {
+  placement_data <- placement_data[complete.cases(placement_data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = placement_data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_1 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_1)
+
+```
+
+```{r, echo=FALSE, message=FALSE}
+
+res_df_rownames <- rownames_to_column(res_df, var = "rownames")
+
+
+plot_2 <- res_df_rownames %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 4, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  ) +
+  geom_text_repel(
+    aes(label = ifelse(sign_DE == "Sign_Up", rownames, "")),  # Replace `rownames` with your label column
+    size = 3,
+    max.overlaps = Inf,       # Control maximum allowed overlaps
+    box.padding = 0.5,       # Padding around text boxes
+    point.padding = 0.3,     # Padding around points
+    segment.color = "gray",  # Color for line segments
+    segment.size = 0.3       # Thickness of line segments
+  )
+
+
+plot(plot_2)
+```
+
+```{r, echo=FALSE, message=FALSE}
+res_df_rownames <- rownames_to_column(res_df, var = "rownames")
+
+
+plot_3 <- res_df_rownames %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 4, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  ) +
+  geom_text_repel(
+    aes(label = ifelse(sign_DE == "Sign_Down", rownames, "")),  # Replace `rownames` with your label column
+    size = 3,
+    max.overlaps = 20,       # Control maximum allowed overlaps
+    box.padding = 0.5,       # Padding around text boxes
+    point.padding = 0.3,     # Padding around points
+    segment.color = "gray",  # Color for line segments
+    segment.size = 0.3       # Thickness of line segments
+  )
+
+
+plot(plot_3)
+```
+
+```{r, echo=FALSE, message=FALSE}
+# Reading them all in so that the TMM normalisation is performed across the whole dataset
+miRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_miRNAs_raw.csv")
+piRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_piRNAs_raw.csv")
+rRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_rRNAs_raw.csv")
+snoRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_snoRNAs_raw.csv")
+tRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_tRNAs_raw.csv")
+snRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_snRNAs_raw.csv")
+miscRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_miscRNAs_raw.csv")
+scaRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_scaRNAs_raw.csv")
+circRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_circRNAs_raw.csv")
+
+counts <- rbind(miRNA, piRNA, rRNA, snoRNA, tRNA, snRNA, miscRNA, scaRNA, circRNA)
+
+counts <- counts %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+counts <- counts %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(counts))) {
+  counts <- counts[complete.cases(counts), ]
+}
+
+# Assuming 'counts' is a matrix of raw count data with genes as rows and samples as columns
+# Create a DGEList object
+y <- DGEList(counts = counts)
+
+# Perform TMM normalization
+y <- calcNormFactors(y)
+
+# Get the normalised counts
+MM_normalized_counts <- cpm(y, normalized.lib.sizes = TRUE)
+
+# Turn normalised data back into a data frame
+MM_normalized_counts <- as.data.frame(MM_normalized_counts)
+
+# Turn the rownames back into a column so we can grab the row we want
+MM_normalized_counts <- rownames_to_column(MM_normalized_counts, var = "Reference")
+
+# Save TMM normalised MM data
+#write.csv(MM_normalized_counts, file = "./MM_TMM_normalized_counts.csv")
+
+# Filter specific rows in TMM normalised miRMaster dataset
+MM_miR145 <- MM_normalized_counts %>%
+  dplyr::filter(Reference == "mmu-miR-145a-5p")
+
+```
+
+```{r, echo=FALSE, message=FALSE}
+# We have the filtered placement data (at least 5 across at least 3, no NAs)
+print(placement_data)
+
+counts <- placement_data
+
+#counts <- counts %>%
+#  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+counts <- counts %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(counts))) {
+  counts <- counts[complete.cases(counts), ]
+}
+
+# Assuming 'counts' is a matrix of raw count data with genes as rows and samples as columns
+# Create a DGEList object
+y <- DGEList(counts = counts)
+
+# Perform TMM normalization
+y <- calcNormFactors(y)
+
+# Get the normalised counts
+BGI_normalized_counts <- cpm(y, normalized.lib.sizes = TRUE)
+
+# Turn normalised data back into a data frame
+BGI_normalized_counts <- as.data.frame(BGI_normalized_counts)
+
+# Turn the rownames back into a column so we can grab the row we want
+BGI_normalized_counts <- rownames_to_column(BGI_normalized_counts, var = "Reference")
+
+# Save TMM normalised BGI data
+#write.csv(BGI_normalized_counts, file = "./BGI_TMM_normalized_counts.csv")
+
+# Filter specific rows in TMM normalised BGI dataset
+BGI_miR145 <- BGI_normalized_counts %>%
+  dplyr::filter(Reference == "mmu-miR-145a-5p mature")
+
+print(BGI_miR145)
+
+```
+
+## Key for bar plot (counts are TMM normalised)
+
+-   Orange = miRMaster analysis pieline = MM
+
+-   Blue = BGI analysis pipeline = BGI
+
+-   A2, A3, A4, A5 = Acrylamide
+
+-   P1, P3, P4, P5 = Control (PBS solution)
+
+Counts are rounded to 1 decimal place.
+
+```{r, echo=FALSE, message=FALSE}
+
+# Create a sample data frame with counts for BGI and MM samples (values rounded to 1 dp)
+data <- data.frame(
+  Category = c("A2_BGI", "A2_MM", "A3_BGI", "A3_MM", "A4_BGI", "A4_MM", "A5_BGI", "A5_MM", "P1_BGI", "P1_MM", 
+               "P3_BGI", "P3_MM", "P4_BGI", "P4_MM", "P5_BGI", "P5_MM"),
+  Count = c(299.6, 1185.4, 215.9, 496.1, 232.2, 696.0, 263.8, 475.5, 377.6, 647.7, 392.7, 431.9, 583.7, 905.5, 361.9, 343.8)
+)
+
+# Create a new column to distinguish between BGI and MM
+data$Type <- ifelse(grepl("BGI", data$Category), "BGI", "MM")
+
+# Plot using ggplot
+library(ggplot2)
+
+# Create the bar plot with counts displayed on top
+ggplot(data, aes(x = Category, y = Count, fill = Type)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Position bars side by side
+  scale_fill_manual(values = c("BGI" = "#0077BB", "MM" = "#EE7733")) +  # Color for BGI and MM
+  theme_minimal() +
+  labs(title = "mmu-miR-145a-5p TMM Normalised Counts in BGI and MM Samples", 
+       x = "Biological Replicates (A= Acrylamide, P= Control)", 
+       y = "TMM-normalised counts") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate x-axis labels for better readability
+  geom_text(aes(label = Count), position = position_dodge(width = 0.9), vjust = -0.5, size = 3)  # Display counts above bars
+
+
+
+```
+
+(Figure caption) The counts of mmu-miR-145a-5p reported by miRMaster (orange) and BGI genomics (blue) were normalised using TMM (Trimmed Mean of M-values) normalisation so that observations would not be skewed by composition bias or variations in sequencing depth. It was observed that there was a discrepancy between the counts of mmu-miR-145a-5p reported by miRMaster (orange) and by BGI genomics (blue).
+
+```{r, echo=FALSE, message=FALSE}
+# We have the filtered placement data (at least 5 across at least 3, no NAs)
+print(placement_data)
+
+placement_data
+
+#counts <- counts %>%
+#  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+placement_data <- placement_data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(placement_data))) {
+  placement_data <- placement_data[complete.cases(placement_data), ]
+}
+
+
+# Turn the rownames back into a column so we can grab the row we want
+placement_data <- rownames_to_column(placement_data, var = "Reference")
+
+# Filter specific rows in TMM normalised BGI dataset
+raw_BGI_miR145 <- placement_data %>%
+  dplyr::filter(Reference == "mmu-miR-145a-5p mature")
+
+print(raw_BGI_miR145)
+```
+
+```{r, echo=FALSE, message=FALSE}
+# Since we aren't doing TMM normalisation and are just using the raw counts for this bar plot, we will only import the miRNA data instead of all the data. 
+miRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRmaster_miRNAs_raw.csv")
+
+miRNA <- miRNA %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+miRNA <- miRNA %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(miRNA))) {
+  miRNA <- miRNA[complete.cases(miRNA), ]
+}
+
+# Turn the rownames back into a column so we can grab the row we want
+miRNA <- rownames_to_column(miRNA, var = "Reference")
+
+# Filter specific rows in TMM normalised miRMaster dataset
+raw_MM_miR145 <- miRNA %>%
+  dplyr::filter(Reference == "mmu-miR-145a-5p")
+
+print(raw_MM_miR145)
+
+```
+
+## Key for bar plot (counts are not normalised)
+
+The TMM-standardised counts were compared to the raw ones so we could observe the effects of normalisation.
+
+-   Pink = miRMaster analysis pieline = MM
+
+-   Blue = BGI analysis pipeline = BGI
+
+-   A2, A3, A4, A5 = Acrylamide
+
+-   P1, P3, P4, P5 = Control (PBS solution)
+
+Counts are rounded to 1 decimal place.
+
+```{r, echo=FALSE, message=FALSE}
+
+# Create a sample data frame with counts for BGI and MM samples (values rounded to 1 dp)
+data <- data.frame(
+  Category = c("A2_BGI", "A2_MM", "A3_BGI", "A3_MM", "A4_BGI", "A4_MM", "A5_BGI", "A5_MM", "P1_BGI", "P1_MM", 
+               "P3_BGI", "P3_MM", "P4_BGI", "P4_MM", "P5_BGI", "P5_MM"),
+  Count = c(6818, 106, 4648, 41, 4893, 43, 5559, 84, 9182, 138, 8769, 42, 13277, 84, 8191, 36)
+)
+
+# Create a new column to distinguish between BGI and MM
+data$Type <- ifelse(grepl("BGI", data$Category), "BGI", "MM")
+
+# Plot using ggplot
+library(ggplot2)
+
+# Create the bar plot with counts displayed on top
+ggplot(data, aes(x = Category, y = Count, fill = Type)) +
+  geom_bar(stat = "identity", position = "dodge") +  # Position bars side by side
+  scale_fill_manual(values = c("BGI" = "#0077BB", "MM" = "#CC79A7")) +  # Color for BGI and MM
+  theme_minimal() +
+  labs(title = "mmu-miR-145a-5p Raw Counts in BGI and MM Samples", 
+       x = "Biological Replicates (A= Acrylamide, P= Control)", 
+       y = "mmu-miR-145a-5p counts") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +  # Rotate x-axis labels for better readability
+  geom_text(aes(label = Count), position = position_dodge(width = 0.9), vjust = -0.5, size = 3)  # Display counts above bars
+
+
+
+```
+
+(Figure caption) It was observed that there was a discrepancy between the raw counts of mmu-miR-145a-5p reported by miRMaster (pink) and by BGI genomics (blue).
+
+## PCA plot with DESeq2-analysed sncRNA data
+Reproducing results from placement. Counts were subjected to basic filtering (removed rows from raw data without at least 5 counts across 3 samples) and then DESeq2 analysis. 
+
+The top 500 most DE sncRNAs are included in this PCA. The ntop = 500 argument in the plotPCA() function is specifying the number of top genes to include in the PCA plot based on their variance. In this case, it is selecting the top 500 genes with the highest variance across the samples to be used for the PCA.
+
+```{r, echo=FALSE, message=FALSE}
+
+sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
+sncRNA_counts <- read.csv(file = "./1_data/sncRNA_raw_counts_filtered.csv")
+
+
+# Rename column "X" to "Reference"
+sncRNA_counts <- sncRNA_counts %>%
+  dplyr::rename(Reference = X)
+
+
+sncRNA_counts <- sncRNA_counts %>% 
+ column_to_rownames(var = "Reference")
+
+dds <- DESeqDataSetFromMatrix(countData = sncRNA_counts,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+
+# Perform variance standardisation with blind = T so the computer is not aware 
+# of which treatment group the samples belong to (i.e., unsupervised analysis).
+
+vsd <- vst(dds, blind = T)
+vst_matrix <- assay(vsd)
+
+####### This is for later when we wanna do similar PCAs on BGI and MM data
+
+# Extract the matrix from the vsd object
+vsd_matrix <- assay(vsd)
+
+# Calculate variance for each row (gene)
+variances <- apply(vsd_matrix, 1, var)
+
+# Sort the variances in descending order and select the top 'ntop' rows
+top_genes <- names(sort(variances, decreasing = TRUE))[1:500]
+
+# Print the row names of the top genes selected for PCA
+#print(top_genes)
+
+######
+
+# Raw counts PCA plot
+
+colours <- c("Control" = "#D55E00", "Acr" = "#332288")
+
+# ntop 500 specifies that we want the top 500 most differentially expressed sncRNAs to form the raw counts PCA
+PCA_plot <- 
+  plotPCA(vsd, intgroup = "Treatment_group", ntop = 500) +
+  scale_color_manual(values = colours) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +
+    theme_minimal() + 
+   labs(
+    title = "PCA of sncRNA response to acrylamide insult (raw counts, DESEq2, top 500)",  # Add title here
+    color = "Treatment group"
+    ) +
+    geom_label_repel(aes(label=colnames(vsd)))
+plot(PCA_plot)
+```
+(Figure caption) PCA analysis on the top 500 most differentially expressed sncRNAs. 33% of variance was accredited to the variable on the x-axis, that being treatment group. 
+
+## PCA plots using TMM standardised sncRNA datasets
+
+Since DESeq2 assumes that the data is raw and in integer form, you cannot pass standardised data through DESeq2. Hence, the BGI and miRMaster PCA plot data below hasn't been through DE analysis, but it does let us know what's going on in the overall sncRNAome. 
+
+
+```{r, echo=FALSE, message=FALSE}
+# Need PCA on TMM normalised BGI data (reference point, should be consistent with placement)
+
+sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
+TMM_BGI_sncRNAs <- read.csv(file = "./1_data/BGI_TMM_normalized_counts_sncRNA.csv")
+
+TMM_BGI_sncRNAs <- dplyr::select(TMM_BGI_sncRNAs, -1)
+
+
+# Move row names to a new column named "rownames"
+TMM_BGI_sncRNAs <- TMM_BGI_sncRNAs %>% 
+  column_to_rownames(var = "Reference")
+
+# Renaming the columns so that we can recycle the PCA script from TEtranscripts results instead of altering the excel spreadsheet, as 
+# that could cause errors in other Rmarkdown reports. 
+
+colnames(TMM_BGI_sncRNAs) <- c("A2", "A3", "A4", "A5", "P1", "P3", "P4", "P5")
+
+# Start plotting
+# Perform PCA
+test_PCA <- prcomp(t(TMM_BGI_sncRNAs), center = FALSE)
+
+# Create PCA data frame
+pca_data <- data.frame(test_PCA$x)
+pca_data$SampleID <- rownames(pca_data)
+
+# Ensure SampleID is a common column for merging
+if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadata)) {
+  pca_data <- merge(pca_data, sample_metadata, by = "SampleID")
+} else {
+  stop("Column 'SampleID' not found in one of the data frames.")
+}
+
+# Set colors for the groups
+level_colors <- c("Acr" = "#0000FF", "Control" = "#000000")
+
+# Plot 
+TMM_BGI_plot <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+
+# Extract percentage of variance explained
+variance_explained <- 100 * TMM_BGI_plot$sdev^2 / sum(TMM_BGI_plot$sdev^2)
+
+
+
+# Create PCA plot using ggplot2
+ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +  # Add shading with `fill` and `stroke` for border thickness
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "PCA of sncRNA response to acrylamide insult (TMM normalised, BGI)",  # Add title here
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal() 
+
+# Need PCA on TMM normalised MM data
+```
+(Figure caption) PCA on TMM-normalised BGI sncRNA data did not indicate that treatment group was a primary source of variance in the dataset. This constrasted the results obtained from the PCA performed on the top 500 most differentially expressed sncRNAs.
+
+It makes sense that these results are different to the placement results because these results have not been through DE analysis. 
+
+This could suggest that a majority of the sncRNAome did not react to treatment in a significant way, however, a small subset of it is. It might be ideal to take the 500 most DE sncRNAs listed in the DESeq2 PCA results, and use their TMM-normalised counts for mixomics later, since a large portion of the sncRNAome seems quiet. 
+
+
+```{r, echo=FALSE, message=FALSE}
+#sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
+TMM_MM_sncRNAs <- read.csv(file = "./1_data/MM_TMM_normalized_counts_sncRNA.csv")
+
+TMM_MM_sncRNAs <- dplyr::select(TMM_MM_sncRNAs, -1)
+
+
+# Move row names to a new column named "rownames"
+TMM_MM_sncRNAs <- TMM_MM_sncRNAs %>% 
+  column_to_rownames(var = "Reference")
+
+# Renaming the columns so that we can recycle the PCA script from TEtranscripts results instead of altering the excel spreadsheet, as 
+# that could cause errors in other Rmarkdown reports. 
+
+#colnames(TMM_BGI_sncRNAs) <- c("A2", "A3", "A4", "A5", "P1", "P3", "P4", "P5")
+
+# Start plotting
+# Perform PCA
+test_PCA <- prcomp(t(TMM_MM_sncRNAs), center = FALSE)
+
+# Create PCA data frame
+pca_data <- data.frame(test_PCA$x)
+pca_data$SampleID <- rownames(pca_data)
+
+# Ensure SampleID is a common column for merging
+if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadata)) {
+  pca_data <- merge(pca_data, sample_metadata, by = "SampleID")
+} else {
+  stop("Column 'SampleID' not found in one of the data frames.")
+}
+
+# Set colors for the groups
+level_colors <- c("Acr" = "#BE5504", "Control" = "#000000")
+
+# Plot 
+TMM_MM_plot <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+
+# Extract percentage of variance explained
+variance_explained <- 100 * TMM_BGI_plot$sdev^2 / sum(TMM_BGI_plot$sdev^2)
+
+
+# Create PCA plot using ggplot2
+# Create PCA plot using ggplot2
+ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +  # Add shading with `fill` and `stroke` for border thickness
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "PCA of sncRNA response to acrylamide insult (TMM normalised, miRMaster)",  # Add title here
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal()
+```
+(Figure caption) PCA on TMM-normalised miRMaster sncRNA data did not indicate that treatment group was a primary source of variance in the dataset. This constrasted the results obtained from the PCA performed on the top 500 most differentially expressed sncRNAs.
+
+
+## Top 500 listed sncRNAs from DE analysis
+The top 500 most DE sncRNAs from the initial PCA (the one that is a replicate of the results gathered in placement, produced in 2023 at https://github.com/ChishanB/expression_profile_of_mouse_seminal_vesicle/blob/main/2_PCA_and_DeSeq.R) were noted. The results are stored in sncRNA_DeSeq_complete.csv and sncRNA_DeSeq_complete_FIXED (the latter is just missing an uneeded column). 
+We will use the top 500 sncRNAs with the most variance to re-construct PCA plots for the BGI data and miRMaster data, and hopefully this time we will see clear distinction between treatment groups.
+
+The data was prepared for the PCA plots below as follows (consitent with placement pipeline for plotting standardised data)
+- Obtain the rows in TMM_BGI_sncRNAs (standardised data) that match top_genes (character string of the names of top ~500 most DE sncRNAs from the DESeq2 analysis)
+- log2 the TMM standardised data
+- Zscore 
+- plot with autoplot function
+
+```{r,echo=FALSE, message=FALSE}
+
+# top_genes is a character vector containing our most DE sncRNAs 
+# TMM_BGI_sncRNAs is already ready from previous PCA
+
+# Replace spaces with underscores in row names
+rownames(TMM_BGI_sncRNAs) <- gsub(" ", "_", rownames(TMM_BGI_sncRNAs))
+
+# I only want the rows in TMM_BGI_sncRNAs that match top_genes
+
+# Filter dataframe by row names
+filtered_TMM_BGI_sncRNAs <- TMM_BGI_sncRNAs[rownames(TMM_BGI_sncRNAs) %in% top_genes, ]
+
+# Same for MM data
+#filtered_TMM_MM_sncRNAs <- TMM_MM_sncRNAs[rownames(TMM_MM_sncRNAs) %in% top_genes, ]
+
+####### ARRRGHHHH MM uses different naming convention so I've gotta get around that
+
+```
+
+
+```{r}
+# filtered massive dataset until it only included the top 500 most DE sncRNAs. It's 8 coloumns of TMM-standardised counts with rownames as each sncRNA name.
+
+#install.packages("ggfortify")
+library(ggfortify)
+
+level_colors <- c("Acr" = "#0000FF", "Control" = "#000000")
+
+log2_TMM_BGI_sncRNAs <- log2(filtered_TMM_BGI_sncRNAs + 1)
+
+Gene_Matrix = log2_TMM_BGI_sncRNAs
+
+
+# Row normalised by Z score (x-Rowmean/ SD)
+Z_scored <- t(scale(t(Gene_Matrix)))
+
+zscored_PCA <- prcomp(t(Z_scored), center = F)
+
+zscored_PCA_plot <- 
+  autoplot(zscored_PCA, 
+           data = sample_metadata, 
+           colour = "Treatment_group", 
+           frame = FALSE, 
+           frame.type = 'norm') + 
+  scale_color_manual(values = level_colors) +  # Set color based on Treatment_group
+  labs(color = "Treatment group") +
+  guides(color = guide_legend(title = "Treatment group")) +  # Use `color` for legend
+  theme_minimal() +
+  geom_point(size = 6, shape = 21, fill = "white", stroke = 1, aes(color = Treatment_group)) +  # Increase dot size and ensure coloring
+  geom_label_repel(aes(label = colnames(Z_scored), color = Treatment_group)) +  # Ensure label colors match Treatment group
+  ggtitle("sncRNA response to acrylamide insult (BGI, top 500 most DE, TMM, z-scored)")  # Add title
+
+# To plot the updated plot
+print(zscored_PCA_plot)
+
+```
+(Figure caption) The top 500 most DE sncRNAs were identified from the raw dataset. PCA analysis on TMM-standardised sncRNA counts (BGI's counts) implied that 19.48% of variation is associated with treatment, as shown by the distinct separation between treatment groups on the y-axis. 
+
+(Discussion) The PCA plot indicates that treatment is only the second largest factor causing variance in the dataset (n = 482). My understanding is that the number 1 cause is the fact that sncRNA data has extremely high variance by nature as part of normal biological function, hence, these results saying that treatment is the second largest factor are very promising. 
+
+
+
+## Discussion for bar plots
+
+The differences in the counts for mmu-miR-145a-5p between BGI and MM became less prominent post-standardisation. Prominent differences remain which indicate inherent differences between the tools' workflows.
+
+Causes for BGI having more counts may include:
+
+-   BGI reported a lot of novel miRNAs which may or may have been known miRNAs that weren't correctly identified.
+
+-   There could be PCR amplification bias.
+
+<!-- -->
+
+-   It's possible MM uses a more stringent aligment method than BGI. Could do some research on whether either tool allows partial matches or includes multi mapped reads which can increase counts.
+
+-   MM might use a more curated database that excludes partial matches, whereas BGI might be using databases with duplicate/overlapping entries for the same miRNA.
+
+-   MM might be de-duplicating reads, whereas BGI might not.
+
+-   The tools may be optimised differently and have different biases.

@@ -1,0 +1,665 @@
+---
+title: "sncRNA analysis of acrylamide-treated vs control seminal vesicles (SPORTS package)"
+author: "Chishan Burch"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(ggrepel)
+library(openxlsx)
+```
+
+```{r, include=FALSE}
+#Threshold for FDR which is the same as p-adjusted
+FDR_threshold <- 0.05
+#Declare graph colours and factor values
+palette <- c("Upreg" = "#D55E00", "Downreg" = "#0072B2", "NS" = "#808080")
+```
+
+Horizonal dashed line represents FDR = -log10(0.05)
+
+Vertical dashed lines represent log2FC = -0.5833 and 0.5833
+
+**miRNA dysregulation**
+
+```{r, include=FALSE}
+#Start with miRNA
+miRNA <- fread("./1_data/miRNA_SCH_glmLRT_FC.csv")
+
+#Adding column for significance and up/down regulation (NS means not significant)
+miRNA <- miRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+#Adding column for -log10FDR
+miRNA <- miRNA %>% mutate(log_FDR = -log10(FDR))
+
+#Adding column for up and down reg
+miRNA$Significance <- factor(miRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+ 
+#plot miRNAs
+miRNA_plot <- ggplot(data = miRNA, aes(x =logFC, y= log_FDR)) + 
+  geom_point(size = 2.5) + theme_minimal() +
+  geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(label = Annotation, colour = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("miRNA") 
+
+```
+
+```{r}
+miRNA_plot
+```
+
+```{r, include=FALSE}
+DE_miRNAs <- miRNA %>% select(Annotation, logFC, log_FDR)
+DE_miRNAs_desc <- DE_miRNAs %>% arrange(desc(logFC))
+DE_miRNAs_asc <- DE_miRNAs %>% arrange((logFC))
+
+miRNA_FDRs <- DE_miRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated miRNAs (highest to lowest FC):
+
+```{r}
+head(DE_miRNAs_desc)
+```
+
+Here are the most downregulated miRNAs (lowest to highest FC):
+
+```{r}
+head(DE_miRNAs_asc)
+```
+
+Here is a list of miRNAs organised from highest to lowest FDR:
+
+```{r}
+head(miRNA_FDRs)
+```
+
+**tRNA dysregulation**
+
+```{r, include=FALSE}
+tRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "tRNA")
+
+#Adding column for significance and up/down regulation (NS means not significant)
+tRNA <- tRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+#Adding column for -log10FDR
+tRNA <- tRNA %>% mutate(log_FDR = -log10(FDR))
+
+tRNA$Significance <- factor(tRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+#plot tRNAs
+tRNA_plot <- ggplot(data = tRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal() +
+  geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("tRNA")
+
+```
+
+```{r}
+tRNA_plot
+```
+
+```{r, include=FALSE}
+DE_tRNAs <- tRNA %>% select(Annotation, logFC, log_FDR)
+DE_tRNAs_desc <- DE_tRNAs %>% arrange(desc(logFC))
+DE_tRNAs_asc <- DE_tRNAs %>% arrange((logFC))
+
+tRNA_FDRs <- DE_tRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated tRNAs (highest to lowest FC):
+
+```{r}
+head(DE_tRNAs_desc)
+```
+
+Here are the most downregulated tRNAs (lowest to highest FC):
+
+```{r}
+head(DE_tRNAs_asc)
+```
+
+Here is a list of tRNAs organised from highest to lowest FDR:
+
+```{r}
+head(tRNA_FDRs)
+```
+
+**rRNA dysregulation**
+
+```{r, include=FALSE}
+#rRNA
+rRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "rRNA")
+
+#Adding column for significance and up/down regulation (NS means not significant)
+rRNA <- rRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+#Adding column for -log10FDR
+rRNA <- rRNA %>% mutate(log_FDR = -log10(FDR))
+
+rRNA$Significance <- factor(rRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+#plot rRNAs
+rRNA_plot <- ggplot(data = rRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("rRNA")
+```
+
+```{r}
+rRNA_plot
+```
+
+```{r, include=FALSE}
+DE_rRNAs <- rRNA %>% select(Annotation, logFC, log_FDR)
+DE_rRNAs_desc <- DE_rRNAs %>% arrange(desc(logFC))
+DE_rRNAs_asc <- DE_rRNAs %>% arrange((logFC))
+
+rRNA_FDRs <- DE_rRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated rRNAs (highest to lowest FC):
+
+```{r}
+head(DE_rRNAs_desc)
+```
+
+Here are the most downregulated rRNAs (lowest to highest FC):
+
+```{r}
+head(DE_rRNAs_asc)
+```
+
+Here is a list of rRNAs organised from highest to lowest FDR:
+
+```{r}
+head(rRNA_FDRs)
+```
+
+**lincRNA dysregulation**
+
+```{r, include=FALSE}
+lincRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "lincRNA")
+
+lincRNA <- lincRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+lincRNA <- lincRNA %>% mutate(log_FDR = -log10(FDR))
+
+lincRNA$Significance <- factor(lincRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+lincRNA_plot <- ggplot(data = lincRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("lincRNA")
+```
+
+```{r}
+lincRNA_plot
+```
+
+```{r, include=FALSE}
+DE_lincRNAs <- lincRNA %>% select(Annotation, logFC, log_FDR)
+DE_lincRNAs_desc <- DE_lincRNAs %>% arrange(desc(logFC))
+DE_lincRNAs_asc <- DE_lincRNAs %>% arrange((logFC))
+
+lincRNA_FDRs <- DE_lincRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated lincRNAs (highest to lowest FC):
+
+```{r}
+head(DE_lincRNAs_desc)
+```
+
+Here are the most downregulated lincRNAs (lowest to highest FC):
+
+```{r}
+head(DE_lincRNAs_asc)
+```
+
+Here is a list of lincRNAs organised from highest to lowest FDR:
+
+```{r}
+head(lincRNA_FDRs)
+```
+
+**Mt-rRNA**
+
+```{r, include=FALSE}
+Mt_rRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "Mt_rRNA")
+
+Mt_rRNA <- Mt_rRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+Mt_rRNA <- Mt_rRNA %>% mutate(log_FDR = -log10(FDR))
+
+Mt_rRNA$Significance <- factor(Mt_rRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+Mt_rRNA_plot <- ggplot(data = Mt_rRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("Mt-rRNA")
+```
+
+```{r}
+Mt_rRNA_plot
+```
+
+```{r, include=FALSE}
+DE_Mt_rRNAs <- Mt_rRNA %>% select(Annotation, logFC, log_FDR)
+DE_Mt_rRNAs_desc <- DE_Mt_rRNAs %>% arrange(desc(logFC))
+DE_Mt_rRNAs_asc <- DE_Mt_rRNAs %>% arrange((logFC))
+
+Mt_rRNA_FDRs <- DE_Mt_rRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated Mt rRNAs (highest to lowest FC):
+
+```{r}
+head(DE_Mt_rRNAs_desc)
+```
+
+Here are the most downregulated Mt rRNAs (lowest to highest FC):
+
+```{r}
+head(DE_Mt_rRNAs_asc)
+```
+
+Here is a list of Mt rRNAs organised from highest to lowest FDR:
+
+```{r}
+head(Mt_rRNA_FDRs)
+```
+
+**Mt-tRNA dysregulation**
+
+```{r, include=FALSE}
+Mt_tRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "Mt_tRNA")
+
+Mt_tRNA <- Mt_tRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+Mt_tRNA <- Mt_tRNA %>% mutate(log_FDR = -log10(FDR))
+
+Mt_tRNA$Significance <- factor(Mt_tRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+Mt_tRNA_plot <- ggplot(data = Mt_tRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("Mt-tRNA")
+```
+
+```{r}
+Mt_tRNA_plot
+```
+
+```{r, include=FALSE}
+DE_Mt_tRNAs <- Mt_tRNA %>% select(Annotation, logFC, log_FDR)
+DE_Mt_tRNAs_desc <- DE_Mt_tRNAs %>% arrange(desc(logFC))
+DE_Mt_tRNAs_asc <- DE_Mt_tRNAs %>% arrange((logFC))
+
+Mt_tRNA_FDRs <- DE_Mt_tRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated Mt tRNAs (highest to lowest FC):
+
+```{r}
+head(DE_Mt_tRNAs_desc)
+```
+
+Here are the most downregulated Mt tRNAs (lowest to highest FC):
+
+```{r}
+head(DE_Mt_tRNAs_asc)
+```
+
+Here is a list of Mt tRNAs organised from highest to lowest FDR:
+
+```{r}
+head(Mt_tRNA_FDRs)
+```
+
+**piRNA dysregulation**
+
+```{r, include=FALSE}
+piRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "piRNA")
+
+piRNA <- piRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+
+piRNA <- piRNA %>% mutate(log_FDR = -log10(FDR))
+
+piRNA$Significance <- factor(piRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+piRNA_plot <- ggplot(data = piRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("piRNA")
+```
+
+```{r}
+piRNA_plot
+```
+
+```{r, include=FALSE}
+DE_piRNAs <- piRNA %>% select(Annotation, logFC, log_FDR)
+DE_piRNA_desc <- DE_piRNAs %>% arrange(desc(logFC))
+DE_piRNA_asc <- DE_piRNAs %>% arrange((logFC))
+
+piRNA_FDRs <- DE_piRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated piRNAs (highest to lowest FC):
+
+```{r}
+head(DE_piRNA_desc)
+```
+
+Here are the most downregulated piRNAs (lowest to highest FC):
+
+```{r}
+head(DE_piRNA_asc)
+```
+
+Here is a list of piRNAs organised from highest to lowest FDR:
+
+```{r}
+head(piRNA_FDRs)
+```
+
+**SnoRNA dysregulation**
+
+```{r, include= FALSE}
+SnoRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "SnoRNA")
+
+SnoRNA <- SnoRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+
+SnoRNA <- SnoRNA %>% mutate(log_FDR = -log10(FDR))
+
+SnoRNA$Significance <- factor(SnoRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+SnoRNA_plot <- ggplot(data = SnoRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("SnoRNA")
+```
+
+```{r}
+SnoRNA_plot
+```
+
+```{r, include=FALSE}
+DE_SnoRNAs <- SnoRNA %>% select(Annotation, logFC, log_FDR)
+DE_SnoRNA_desc <- DE_SnoRNAs %>% arrange(desc(logFC))
+DE_SnoRNA_asc <- DE_SnoRNAs %>% arrange((logFC))
+
+SnoRNA_FDRs <- DE_SnoRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated SnoRNAs (highest to lowest FC):
+
+```{r}
+head(DE_SnoRNA_desc)
+```
+
+Here are the most downregulated SnoRNAs (lowest to highest FC):
+
+```{r}
+head(DE_SnoRNA_asc)
+```
+
+Here is a list of SnoRNAs organised from highest to lowest FDR:
+
+```{r}
+head(SnoRNA_FDRs)
+```
+
+**SnRNA dysregulation**
+
+```{r, include=FALSE}
+SnRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "SnRNA")
+
+SnRNA <- SnRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        ))  
+
+SnRNA <- SnRNA %>% mutate(log_FDR = -log10(FDR))
+
+SnRNA$Significance <- factor(SnRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+SnRNA_plot <- ggplot(data = SnRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("SnRNA")
+```
+
+```{r}
+SnRNA_plot
+```
+
+```{r, include=FALSE}
+DE_SnRNAs <- SnoRNA %>% select(Annotation, logFC, log_FDR)
+DE_SnRNA_desc <- DE_SnRNAs %>% arrange(desc(logFC))
+DE_SnRNA_asc <- DE_SnRNAs %>% arrange((logFC))
+
+SnRNA_FDRs <- DE_SnRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated SnRNAs (highest to lowest FC):
+
+```{r}
+head(DE_SnRNA_desc)
+```
+
+Here are the most downregulated SnRNAs (lowest to highest FC):
+
+```{r}
+head(DE_SnRNA_asc)
+```
+
+Here is a list of SnRNAs organised from highest to lowest FDR:
+
+```{r}
+head(SnRNA_FDRs)
+```
+
+**YRNA dysregulation**
+
+```{r, include=FALSE}
+YRNA <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "YRNA")
+
+YRNA <- YRNA %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        ))  
+
+YRNA <- YRNA %>% mutate(log_FDR = -log10(FDR))
+
+YRNA$Significance <- factor(YRNA$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+YRNA_plot <- ggplot(data = YRNA, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("YRNA")
+```
+
+```{r}
+YRNA_plot
+```
+
+```{r, include=FALSE}
+DE_YRNAs <- YRNA %>% select(Annotation, logFC, log_FDR)
+DE_YRNA_desc <- DE_YRNAs %>% arrange(desc(logFC))
+DE_YRNA_asc <- DE_YRNAs %>% arrange((logFC))
+
+YRNA_FDRs <- DE_YRNAs %>% arrange(desc(log_FDR))
+
+```
+
+Here are the most upregulated YRNAs (highest to lowest FC):
+
+```{r}
+head(DE_YRNA_desc)
+```
+
+Here are the most downregulated YRNAs (lowest to highest FC):
+
+```{r}
+head(DE_YRNA_asc)
+```
+
+Here is a list of YRNAs organised from highest to lowest FDR:
+
+```{r}
+head(YRNA_FDRs)
+```
+
+**Dysregulation of sncRNAs with NO annotation**
+
+```{r, include=FALSE}
+NO_annotation <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "NO_Annotation")
+
+NO_annotation <- NO_annotation %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+
+NO_annotation <- NO_annotation %>% mutate(log_FDR = -log10(FDR))
+
+NO_annotation$Significance <- factor(NO_annotation$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+NO_annotation_plot <- ggplot(data = NO_annotation, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("NO Annotation")
+```
+
+```{r}
+NO_annotation_plot
+```
+
+**Other**
+
+```{r, include = FALSE}
+Other <- read.xlsx("./1_data/Sch_edgeR_glmRT.xlsx", sheet = "other")
+
+Other <- Other %>%
+  mutate(Significance = if_else(FDR < FDR_threshold & logFC < 0 & logFC < -0.5833, "Downreg",
+                           if_else(FDR < FDR_threshold & logFC > 0 & logFC > 0.5833, "Upreg", "NS")
+                          
+        )) 
+
+Other <- Other %>% mutate(log_FDR = -log10(FDR))
+
+Other$Significance <- factor(Other$Significance, levels = c("Upreg","Downreg", "NS"))
+
+
+other_plot <- ggplot(data = Other, aes(x =logFC, y= log_FDR)) + geom_point(size = 2.5) + theme_minimal () + geom_hline(yintercept = -log10(FDR_threshold), linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = -0.5833, linetype = "dashed", col = "#999999") +
+  geom_vline(xintercept = 0.5833, linetype = "dashed", col = "#999999") +
+  aes(x = logFC, y = log_FDR, col = Significance, fill = Significance) +
+  scale_color_manual(values = palette) + scale_fill_manual(values = palette) +
+  xlab("log2FoldChange") + ylab("-log10(FDR)") + theme(legend.title = element_blank(), 
+  axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+  legend.text = element_text(size = 14)) + ggtitle("Other ")
+
+```
+
+```{r}
+other_plot
+```
