@@ -1,0 +1,952 @@
+---
+title: "sncrna_june"
+author: "Chishan Burch"
+date: "2025-06-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#install.packages("readxl")
+#install.packages("openxlsx")
+#install.packages("ggplot2")
+
+#install.packages("DESeq2")
+#install.packages("dplyr")
+#install.packages("tibble")
+#install.packages("ggrepel")
+#install.packages("edgeR")
+
+library(openxlsx)
+library(dplyr)
+library(tibble)
+library(DESeq2)
+library(ggplot2)
+library(openxlsx)
+library(readxl)
+library(ggrepel)
+library(edgeR)
+
+```
+
+```{r}
+#A2 <- read.xlsx("./1_data/sncRNA_june/A2_june.xlsx")
+#A3 <- read.xlsx("./1_data/sncRNA_june/A3_june.xlsx")
+#A4 <- read.xlsx("./1_data/sncRNA_june/A4_june.xlsx")
+#A5 <- read.xlsx("./1_data/sncRNA_june/A5_june.xlsx")
+
+#P1 <- read.xlsx("./1_data/sncRNA_june/P1_june.xlsx")
+#P3 <- read.xlsx("./1_data/sncRNA_june/P3_june.xlsx")
+#P4 <- read.xlsx("./1_data/sncRNA_june/P4_june.xlsx")
+#P5 <- read.xlsx("./1_data/sncRNA_june/P5_june.xlsx")
+
+# The data is not in the structure I am used to so I need to re-format it before I can do my pipeline 
+#### Here I am creating an example of the final structure I want my data to be in so I can prompt chatGPT to give me the correct output
+
+#sRNA.id <- c("example_pir1","example_pir2", "example_pir3", "example_pir4", "example_pir5", "example_pir6") 
+#Type <- c("example_type", "example_type","example_type", "example_type", "example_type", "example_type")
+#Description <- c("example_desc", "example_desc","example_desc", "example_desc","example_desc", "example_desc")
+#A2 <- c(1, 66, 35, 45, 2, 34) 
+#A3 <- c(8, 234, 35, 283, 289, 34) 
+#A4 <- c(1, 200, 445, 283, 289, 34) 
+#A5 <- c(445, 0, 35, 3, 289, 34) 
+#P1 <- c(1, 200, 35, 0, 43, 34) 
+#P3 <- c(1, 2, 35, 283, 289, 34) 
+#P4 <- c(56, 33, 35, 283, 289, 34) 
+#P5 <- c(1, 200, 35, 283, 9, 34) 
+            
+#example_df <- data.frame(sRNA.id, Type, Description, A2, A3, A4, A5, P1, P3, P4, P5, stringsAsFactors = FALSE)
+
+# Asked ChatGPT "My data frames are named A2, A3, A4, A5, P1, P3, P4, P5. How can I combine them to look like my data frame example_df?"
+###
+```
+
+
+```{r}
+# I was having trouble with duplicated rows, so we will try combining the sRNA.id and Type columns
+
+#library(tidyr)
+
+# Combine the 'sRNA.id' and 'Type' columns with 'Type' after 'sRNA.id'
+#A2 <- A2 %>%
+#  unite("sRNA_Type", sRNA.id, Type, sep = " ", remove = FALSE)
+
+#A3 <- A3 %>%
+#  unite("sRNA_Type", sRNA.id, Type, sep = " ", remove = FALSE)
+
+#A4 <- A4 %>%
+#  unite("sRNA_Type", sRNA.id, Type, sep = " ", remove = FALSE)
+
+#A5 <- A5 %>%
+#  unite("sRNA_Type", sRNA.id, Type, sep = " ", remove = FALSE)
+
+#P1 <- P1 %>%
+#  unite("sRNA_Type", sRNA.id, Type, sep = " ", remove = FALSE)
+
+#P3 <- P3 %>%
+#  unite("sRNA_Type", sRNA.id, Type, sep = " ", remove = FALSE)
+
+#P4 <- P4 %>%
+#  unite("sRNA_Type", sRNA.id, Type, sep = " ", remove = FALSE)
+
+#P5 <- P5 %>%
+#  unite("sRNA_Type", sRNA.id, Type, sep = " ", remove = FALSE)
+```
+
+```{r}
+# Step 1: Store all data frames in a list
+#samples <- list(A2 = A2, A3 = A3, A4 = A4, A5 = A5, P1 = P1, P3 = P3, P4 = P4, P5 = P5)
+
+# Step 2: Keep only `sRNA_Type` and sample-specific column, process into a new list
+#processed_samples <- lapply(names(samples), function(sample_name) {
+#  df <- samples[[sample_name]]  # Access the original data frame
+  
+  # Check if the sample column exists
+#  if (!sample_name %in% colnames(df)) {
+#    stop(paste("Missing column:", sample_name, "in data frame."))
+#  }
+  
+  # Select and rename columns
+#  df <- df[, c("sRNA_Type", sample_name)]
+#  colnames(df)[2] <- "sample_value"  # Standardize column name for merging
+#  return(df)
+#})
+
+# Step 3: Merge all data frames by `sRNA_Type`
+#merged_data <- processed_samples[[1]]  # Start with the first data frame
+
+#for (i in 2:length(processed_samples)) {
+  # Retrieve the current sample data frame
+#  current_sample <- processed_samples[[i]]
+#  sample_name <- names(samples)[i]
+  
+  # Rename `sample_value` dynamically
+#  colnames(current_sample)[2] <- sample_name  # Rename to the sample's name
+  
+  # Merge with the existing merged data
+#  merged_data <- merge(merged_data, current_sample, by = "sRNA_Type", all = TRUE)
+#}
+
+# Step 4: Add `Type` and `Description` columns from A2
+#merged_data <- merge(
+#  merged_data,
+#  A2[, c("sRNA_Type", "sRNA.id", "Type", "Description")],
+#  by = "sRNA_Type",
+#  all.x = TRUE
+#)
+
+# Step 5: Reorder columns
+#final_columns <- c("sRNA_Type", "sRNA.id", "Type", "Description", names(samples))
+#merged_data <- merged_data[, final_columns]
+
+# Step 6: Replace NA with 0 (optional)
+#merged_data[is.na(merged_data)] <- 0
+
+# Step 7: View the final merged data
+#print(merged_data)
+
+# Renaming column 2
+#merged_data <- merged_data %>%
+#  rename("sample_value" = "A2")
+
+#write.csv(merged_data, file ="./1_data/sncRNA_june/raw_UMI_counts_sncRNA_june.csv")
+```
+
+QC and filter raw data
+```{r include=FALSE}
+df <- read.csv(file = "./1_data/sncRNA_june/raw_UMI_counts_sncRNA_june.csv")
+
+min.counts <- 5
+min.samples <- 3
+
+# Removing uneeded columns
+df <- df[, -c(1, 11, 12, 13)]
+
+# Make the sncRNA ids into rownames
+df <- column_to_rownames(df, var = "sRNA_Type")
+
+ df <- df %>%
+   filter(rowSums(. >= min.counts) >= min.samples)
+
+    if (any(is.na(df))) {
+      df <- df[complete.cases(df), ]
+    }
+```
+
+Top 6 rows (omitted 1603 rows)
+```{r}
+head(df)
+
+```
+
+
+# Principal component analysis (PCA) on filtered small RNA counts
+```{r}
+
+# A = Acrylamide, P = Control
+sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
+
+sample_metadata$Treatment_group <- as.factor(sample_metadata$Treatment_group)
+levels(sample_metadata$Treatment_group)
+
+level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+
+
+
+PCA <- prcomp(t(df), center = TRUE)
+#######
+# Count the number of duplicate values in the column 'xcolumn'
+#num_duplicates <- sum(duplicated(df$sRNA_Type))
+
+# Print the result
+#print(num_duplicates)
+
+
+
+####
+pca_data <- data.frame(PCA$x)
+pca_data$SampleID <- rownames(pca_data)
+
+
+
+# Ensure SampleID column exists in sample_metadata and matches pca_data
+sample_metadata$SampleID <- as.character(sample_metadata$SampleID)
+
+# Merge Treatment_group into pca_data using SampleID as the key
+pca_data <- merge(pca_data, sample_metadata[, c("SampleID", "Treatment_group")], by = "SampleID", all.x = TRUE)
+
+
+
+# Vareince explained
+variance_explained <- 100 * PCA$sdev^2 / sum(PCA$sdev^2)
+
+
+# Plotting
+PCA_sncRNAs <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(
+    title = "Dimensionality Reduction Highlights Transcriptomic Shifts in small RNAs",
+    color = "Treatment group", 
+    x = paste0("PC1 (", round(variance_explained[1], 1), "%)"), 
+    y = paste0("PC2 (", round(variance_explained[2], 1), "%)")
+  ) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal()
+
+plot(PCA_sncRNAs)
+# Save the plot as a PNG
+#ggsave(
+#  filename = "./3_results/PCA1_sncRNAs.png", 
+#  plot = PCA_sncRNAs,           
+#  width = 8,                    
+#  height = 6,                   
+#  dpi = 300                     
+#)
+
+```
+
+
+# DE analysis and volcano plots
+```{r, include=FALSE}
+# Relevel the Treatment_group factor
+sample_metadata$Treatment_group <- relevel(sample_metadata$Treatment_group, ref = "Control")
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = df,
+                              colData = sample_metadata,
+                              design = ~Treatment_group)
+dds <- DESeq(dds)
+
+# Results and filtering
+res <- results(dds, contrast = c("Treatment_group", "Acr", "Control")) 
+res_df <- as.data.frame(res)
+res_df <- na.omit(res_df)  # Remove rows with NA values
+
+
+# Variance Stabilizing Transformation and PCA
+vsd <- varianceStabilizingTransformation(dds, blind = TRUE)
+vst_matrix <- assay(vsd)
+
+pca <- prcomp(t(vst_matrix))
+plot(pca$x[, 1], pca$x[, 2], main = "PCA of VST-transformed small RNA data", 
+     xlab = "PC1", ylab = "PC2")
+
+# Annotate significant DE results
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS")))
+
+# Add a -log10 column for volcano plot
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+# Save results to CSV
+#write.csv(res_df, file = "./1_data/sncRNA_june/deseq_sncrnas_june.csv")
+
+# Volcano Plot
+colours_1 <- c("Sign_Up" = "#994455", "Sign_Down" = "#0077BB", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+plot_1 <- res_df %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + 
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+
+
+```
+
+
+```{r, include=FALSE}
+# Use grep() to separate the different sncRNA types **plot if asked
+
+# Mature miRNA
+rows <- grep("mature", rownames(res_df))
+mature_miRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
+print(mature_miRNA_df)
+
+# Volcano Plot
+
+plot_2 <- mature_miRNA_df %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + 
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+
+# Display plot
+plot(plot_2)
+
+# Hairpin miRNA
+rows <- grep("hairpin", rownames(res_df))
+hairpin_miRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
+print(hairpin_miRNA_df)
+
+plot_3 <- hairpin_miRNA_df %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + 
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+
+# Display plot
+plot(plot_3)
+
+# piRNA 
+rows <- grep("piRNA", rownames(res_df))
+piRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
+print(piRNA_df)
+
+
+plot_4 <- piRNA_df %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + 
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+
+# Display plot
+plot(plot_4)
+
+
+# rRNA
+rows <- grep("rRNA", rownames(res_df))
+rRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
+print(rRNA_df)
+
+plot_5 <- rRNA_df %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + 
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+
+# Display plot
+plot(plot_5)
+
+
+# snoRNA
+rows <- grep("snoRNA", rownames(res_df))
+snoRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
+print(snoRNA_df)
+
+plot_6 <- snoRNA_df %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + 
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+
+plot(plot_6)
+
+
+# snRNA
+rows <- grep("snRNA", rownames(res_df))
+snRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
+print(snRNA_df)
+
+
+rows <- grep("snoRNA", rownames(res_df))
+snoRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
+print(snoRNA_df)
+
+plot_6 <- snRNA_df %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + 
+  theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+
+plot(plot_6)
+
+
+
+```
+
+
+```{r}
+# mature miRNA
+plot(plot_1)
+```
+Take the validated targets of downregulated miRNAs from multimiR, and see of those same genes are upregulated in the TEtranscripts dataset.Use volcano plot. 
+Take sig down miRNA tagrtes
+Plot them on volcano plot, plot all miRNA targets as blue. Every gene will be grey exceot the targets of downregulated miRNAs
+Do the same on a separate plot with upregulated miRNA targets.
+
+
+
+```{r}
+# hairpin miRNA
+plot(plot_2)
+```
+
+```{r}
+# piRNA
+plot(plot_3)
+```
+
+```{r}
+# rRNA
+plot(plot_4)
+```
+
+```{r}
+# snoRNA
+plot(plot_5)
+```
+
+```{r}
+# snRNA
+plot(plot_6)
+```
+
+mRNA target prediction
+```{r}
+
+# We want to identify mRNAs which are targeted by upregulated and downregulated miRNAs
+
+# Load libraries
+#library(openxlsx)
+library(data.table)
+library(dplyr)
+#library(tibble)
+
+library(ggplot2)
+library(ggvenn)
+
+#BiocManager::install("multiMiR")
+
+
+# Warning in install.packages :
+ # package ‘multiMiR’ is not available for this version of R
+
+#A version of this package for your version of R might be available elsewhere,
+#see the ideas at
+#https://cran.r-project.org/doc/manuals/r-patched/R-admin.html#Installing-packages
+
+library(multiMiR)
+#library(edgeR)
+#library(limma)
+
+# Remove 'mature' from row names
+rownames(mature_miRNA_df) <- gsub(" mature", "", rownames(mature_miRNA_df)) #mature
+rownames(hairpin_miRNA_df) <- gsub(" hairpin", "", rownames(hairpin_miRNA_df)) #hairpin
+
+mature_miRNA_df <- rownames_to_column(mature_miRNA_df, "miRNA_ids")
+hairpin_miRNA_df <- rownames_to_column(hairpin_miRNA_df, "miRNA_ids")
+
+# Follow 5_miR_target_prediction.R from placement. (Up to line 134)
+significant_miRNAs <- mature_miRNA_df %>%
+  filter(padj < 0.05)
+significant_miRNAs_hairpins <- hairpin_miRNA_df %>%
+  filter(padj < 0.05)
+
+# Create a df of all the mature miRNAs with padj < 0.05, and a df of all the mature miRNAs to pass the general filters.
+
+# significant miRNAs are here
+print(significant_miRNAs)
+# all the miRNAs are here
+print(mature_miRNA_df)
+
+
+# Upregulated and downregulated miRNAs
+miRNA_UP <- significant_miRNAs %>%
+filter(log2FoldChange > 0)
+
+miRNA_DOWN <- significant_miRNAs %>%
+  filter(log2FoldChange < 0)
+
+#hairpins_UP <- significant_miRNAs_hairpins %>%
+#  filter(log2FoldChange > 0)
+
+#hairpins_DOWN <- significant_miRNAs_hairpins %>%
+#  filter(log2FoldChange < 0)
+
+
+# Get vectors of miRNA ids and remove empty strings
+
+mature_up <- miRNA_UP$miRNA_ids
+mature_up <- mature_up[mature_up != ""] # REMOVING EMPTY STRINGS IS IMPORTANT
+
+mature_down <- miRNA_DOWN$miRNA_ids
+mature_down <- mature_down[mature_down != ""]
+
+#hairpins_up <- hairpins_UP$miRNA_ids
+#hairpins_up <- hairpins_up[hairpins_up != ""]
+
+#hairpins_down <- hairpins_DOWN$miRNA_ids
+#hairpins_down <- hairpins_down[hairpins_down != ""]
+
+# need to specify org = "mmu" every time the function is used
+
+
+# MATURE MIRNA UP PREDICTED AND VALIDATED ################
+# MUP = mature, upregulated, predicted
+# MUV = mature, downregulated, validated
+#multimiR_MUP <- get_multimir(org = "mmu",
+#                                 mirna = mature_up,
+#                                 table = c("predicted"),
+#                                 summary = TRUE)
+multimiR_MUV <- get_multimir(org = "mmu",
+                                 mirna = mature_up,
+                                 table = c("validated"),
+                                 summary = TRUE)
+# MATURE MIRNA DOWN PREDICTED AND VALIDATED ################
+#multimiR_MDP <- get_multimir(org = "mmu",
+#                                 mirna = mature_down,
+#                                 table = c("predicted"),
+#                                 summary = TRUE)
+multimiR_MDV <- get_multimir(org = "mmu",
+                                 mirna = mature_down,
+                                 table = c("validated"),
+                                 summary = TRUE)
+# HAIRPIN MIRNA UP PREDICTED AND VALIDATED ################
+#multimiR_HUP <- get_multimir(org = "mmu",
+#                                 mirna = hairpins_up,
+#                                 table = c("predicted"),
+#                                 summary = TRUE)
+#multimiR_HUV <- get_multimir(org = "mmu",
+#                                 mirna = hairpins_up,
+#                                 table = c("validated"),
+#                                 summary = TRUE)
+# HAIRPIN MIRNA DOWN PREDICTED AND VALIDATED ################
+#multimiR_HDP <- get_multimir(org = "mmu",
+#                                 mirna = hairpins_down,
+#                                 table = c("predicted"),
+#                                 summary = TRUE)
+#multimiR_HDV <- get_multimir(org = "mmu",
+#                                 mirna = hairpins_down,
+#                                 table = c("validated"),
+#                                 summary = TRUE)
+## omgosh that was alot
+
+# Now pass each one as a data frame and save it
+#mature upregulated
+#multimiR_MUP <- as.data.frame(multimiR_MUP@data)
+multimiR_MUV <- as.data.frame(multimiR_MUV@data)
+
+# mature downregulated
+#multimiR_MDP <- as.data.frame(multimiR_MDP@data)
+multimiR_MDV <- as.data.frame(multimiR_MDV@data)
+
+# hairpin upregulated
+#multimiR_HUP <- as.data.frame(multimiR_HUP@data)
+#multimiR_HUV <- as.data.frame(multimiR_HUV@data)
+
+# hairpin downregulated
+#multimiR_HDP <- as.data.frame(multimiR_HDP@data)
+#multimiR_HDV <- as.data.frame(multimiR_HDV@data)
+
+# Save them, girlqueen
+#write.csv(multimiR_MUP, file = "./3_results/multimiR_mature_mirnas_up_predicted.csv")
+#write.csv(multimiR_MUV, file = "./3_results/multimiR_mature_mirnas_up_validated.csv")
+
+#write.csv(multimiR_MDP, file = "./3_results/multimiR_mature_mirnas_down_predicted.csv")
+#write.csv(multimiR_MDV, file = "./3_results/multimiR_mature_mirnas_down_validated.csv")
+
+#write.csv(multimiR_HUP, file = "./3_results/multimiR_hairpin_mirnas_up_predicted.csv")
+#write.csv(multimiR_HUV, file = "./3_results/multimiR_hairpin_mirnas_up_validated.csv")
+
+#write.csv(multimiR_HDP, file = "./3_results/multimiR_hairpin_mirnas_down_predicted.csv")
+#write.csv(multimiR_HDV, file = "./3_results/multimiR_hairpin_mirnas_down_validated.csv")
+
+# whip and nae nae
+
+
+# Take identified miRNA targets and identify them in the mRNA volcano plot/dataset. Only use the validated targets for this.
+# On the volcano plot with all genes, highlight the (validated) genes targeted by miRNAs. Have different colours for up and down regulated targets. 
+
+
+```
+
+
+
+KEGG analysis of mRNA targets
+```{r}
+
+# Combine up and down into a single vector before doing GO-ORA and KEGG because all miRNAs can be up or downregulated at different times. Doing it like 
+# this strengthnes the results
+
+# Just do the mature ones for the scope of honours thesis
+
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+
+# For this I follow TEtranscripts_april.Rmd
+
+
+# Obtain vectors of entrez ids 
+
+# I'm gonna overwrite the multimir results to preserve memory since they are already saved as csv files by this point.  
+
+# matrue upregulated
+multimiR_MUV <- multimiR_MUV
+
+# mature downregulated
+multimiR_MDV <- multimiR_MDV
+
+head(multimiR_MDV)
+head(multimiR_MUV)
+
+# Combine both data frames into one
+combined_df <- rbind(multimiR_MUV, multimiR_MDV)
+
+# Filter out duplicate  entries (keeping the first occurrence)
+unique_df <- combined_df[!duplicated(combined_df$target_entrez), ]
+
+# If you just want the vector of unique mature_mirna_id values:
+unique_multimiR_ids <- unique(combined_df$target_entrez)
+
+
+# HIT LIST
+head(unique_multimiR_ids)
+
+# FOR the background list, use the targets of miRNAs meeting basic QC (pre DESeq), because the multimiR results are made from miRNAs 
+# which stand out post-DESEq2
+###############
+
+
+genes <- fread(file = "./1_data/Transcriptomics/TE_and_gene_counts_Updated_and_Raw.txt")
+
+# Isolating the gene names instead of the ensembl ids.
+background_list <- genes$ensembl.TE
+
+# BACKGROUND LIST 
+head(background_list)
+
+# Gotta convert background list to ensembl
+#BiocManager::install("org.Mm.eg.db")
+library(org.Mm.eg.db)  
+organism <- org.Mm.eg.db    
+
+library(clusterProfiler)
+
+# Convert gene names to KEGG IDs
+    KEGG_background_list <- bitr(
+      background_list,
+      fromType = "ENSEMBL",  # Source ID type (e.g., HGNC symbol)
+      toType = "ENTREZID",      # Target ID type
+      OrgDb = organism  
+    )
+
+KEGG_background_list <- KEGG_background_list$ENTREZID
+
+# Check if there is some overlap between the hit list and background list
+length(intersect(unique_multimiR_ids, KEGG_background_list)) 
+
+KEGG_enrichment_results <- enrichKEGG(
+  gene = unique_multimiR_ids,
+  universe = KEGG_background_list,
+  organism = "mmu",  # Mouse
+  keyType = "kegg",  # Key type in KEGG
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.05
+)
+
+print(KEGG_enrichment_results)
+
+
+
+#KEGG_barplot <- barplot(KEGG_enrichment_results, showCategory = 20)
+#KEGG_dotplot <- dotplot(KEGG_enrichment_results, color = "pvalue")
+
+# Save KEGG barplot
+#png("KEGG_barplot.png", width = 1200, height = 900, res = 150)
+#barplot(KEGG_enrichment_results, showCategory = 20)
+#dev.off()
+
+# Save KEGG dotplot
+#png("KEGG_dotplot.png", width = 1200, height = 900, res = 150)
+#dotplot(KEGG_enrichment_results, color = "pvalue")
+#dev.off()
+
+
+
+#KEGG_results <- as.data.frame(KEGG_enrichment_results@result)
+
+#write.csv(KEGG_results, file = "./3_results/sncRNA_July_KEGG.csv")
+############################################################################## BACKGROUND LIST IS THE TETRANSCRPTS ENSUMBL IDS TURNED INTO ENTREZ
+## OMGGG I NEEDED THE ENTREZ IDS ARRGHH#################
+
+
+
+
+```
+
+
+GO analysis of mRNA targets.
+```{r}
+
+# Produced during KEGG analysis section
+# ENSEMBL HIT LIST
+unique_multimiR_ids_ensembl <- combined_df$target_ensembl
+# ENSEMB BACKGROUND LIST
+head(background_list)
+
+go_enrich <- enrichGO(gene = unique_multimiR_ids_ensembl,
+                     universe = background_list,
+                      OrgDb = organism, 
+                      keyType = 'ENSEMBL',
+                      readable = T,
+                      ont = "BP",
+                      pvalueCutoff = 0.05, 
+                      qvalueCutoff = 0.10)
+
+
+# Extract and save results table
+
+go_results <- go_enrich@result
+go_results$GeneRatio <- gsub("/","//",go_results$GeneRatio)
+go_results$BgRatio <- gsub("/","//",go_results$BgRatio)
+
+
+#write.xlsx(go_results, file = "./3_results/sncRNA_GOenrich.xlsx")
+
+# Save table
+
+# Step 4 - Plots
+## Bar plot
+barplot <- barplot(go_enrich,
+        title = "GO Biological Pathways")
+
+plot(barplot)
+#ggsave(file = "./2_figures/sncRNA_GO_barplot.png")
+
+## Dot plot
+enrichplot::dotplot(go_enrich)
+
+#ggsave(file = "./2_figures/sncRNA_GO_dotplot.png")
+
+## To remove/account for redundant parent pathways (all those terms belonging to the same general functional group)
+edox2 <- pairwise_termsim(go_enrich)
+
+### Tree plots
+p1 <- treeplot(edox2, offset = 10)
+plot(p1)
+
+#ggsave("./2_figures/sncRNA_GO_treeplot1.png", plot = p1, width = 15, height = 6, units = "in", dpi = 300)
+
+p2 <- treeplot(edox2, hclust_method = "average", offset = 10)
+plot(p2)
+
+#ggsave("./2_figures/sncRNA_GO_treeplot2.png", plot = p2, width = 15, height = 6, units = "in", dpi = 300)
+
+p3 <- treeplot(edox2, offset = 7,
+               nCluster = 5, # default is 5. Changes number of groups clustered
+               showCategory = 10)  # Number of 'top terms' that will be grouped and displayed in the plot
+plot(p3)
+
+#ggsave("./2_figures/sncRNA_GO_treeplot3.png", plot = p3, width = 15, height = 6, units = "in", dpi = 300)
+
+
+```
+
+
+
+
+
+
+Perform TMM normalisation of sncRNA
+
+REDO THE TMM for sncRNA and for mRNA
+```{r}
+counts <- df
+
+# # Assuming 'counts' is a matrix of raw count data with genes as rows and samples as columns
+# # Create a DGEList object
+y <- DGEList(counts = counts)
+
+# # Perform TMM normalization
+y <- calcNormFactors(y)
+
+# # Get the normalised counts
+TMM_matrix <- cpm(y, prior.count = 1, normalized.lib.sizes = TRUE)
+
+# # Save them. They will be used for PCA plots.
+#write.csv(TMM_matrix, file = "./3_results/sncRNA_june_TMM_matrix.csv", row.names = TRUE)
+
+
+```
+
+
+
+PCA plot of TMM
+```{r}
+
+# 3. PCA plots – 1 x Gene, 1 x TE, 1 x ALL 
+
+# Start plotting
+# Perform PCA
+sncRNA_PCA <- prcomp(t(TMM_matrix), center = FALSE)
+
+# Create PCA data frame
+pca_data <- data.frame(sncRNA_PCA$x)
+pca_data$SampleID <- rownames(pca_data)
+
+# Ensure SampleID is a common column for merging
+if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadata)) {
+  pca_data <- merge(pca_data, sample_metadata, by = "SampleID")
+} else {
+  stop("Column 'SampleID' not found in one of the data frames.")
+}
+
+# Set colors for the groups
+#level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+
+
+# Plot 
+sncRNA_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+
+# Extract percentage of variance explained
+variance_explained <- 100 * sncRNA_PCA$sdev^2 / sum(sncRNA_PCA$sdev^2)
+
+
+# Create PCA plot using ggplot2
+sncRNA_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 4, shape = 21, fill = "white", stroke = 1) +  # Add shading with `fill` and `stroke` for border thickness
+  geom_label_repel(size = 3, box.padding = 0.25, label.padding = 0.5) +
+  scale_color_manual(values = level_colors) +
+  labs(title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV (all sncRNAs)",
+       color = "Treatment group", 
+       x = paste0("PC1 (", round(variance_explained[1], 1), "%)"), 
+       y = paste0("PC2 (", round(variance_explained[2], 1), "%)")) +
+  guides(color = guide_legend(title = "Treatment group")) +
+  theme_minimal() 
+
+plot(sncRNA_PCA)
+```
+
+
+# Boxplot of TMM normalised small RNA counts (log2)
+```{r, include=FALSE}
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+
+# Convert matrix to data frame and reshape it
+TMM_df <- as.data.frame(TMM_matrix) %>%
+  tibble::rownames_to_column(var = "Gene") %>%  # or "id", depending on preference
+  pivot_longer(
+    cols = -Gene,  # pivot all columns except Gene name
+    names_to = "Sample",
+    values_to = "Expression"
+  )
+
+# Plot for TMM sncRNAs
+TMM_boxplot <- ggplot(TMM_df, aes(x = Sample, y = log2(Expression + 1))) +
+  geom_boxplot() +
+  labs(title = "Boxplot for TMM small RNAs", x = "Sample", y = "Expression") +
+  theme_minimal()
+
+```
+
+*** Do a boxplot for raw counts as well for comparison
+```{r}
+# NO IDEA WHY THIS ISNT WORKING ARGHH
+
+# Convert matrix to data frame and reshape it
+raw_df <- as.data.frame(df) %>%
+  tibble::rownames_to_column(var = "Gene") %>%  # or "id", depending on preference
+  pivot_longer(
+    cols = -Gene,  # pivot all columns except Gene name
+    names_to = "Sample",
+    values_to = "Expression"
+  )
+
+# Plot for raw sncRNA counts
+boxplot <- ggplot(raw_df, aes(x = Sample, y = log2(Expression + 1))) +
+  geom_boxplot() +
+  labs(title = "Boxplot for small RNAs (raw counts)", x = "Sample", y = "Expression") +
+  theme_minimal()
+
+```
+
+# Boxplot
+
+```{r}
+plot(boxplot)
+```
+# TMM boxplot
+
+It's only slightly different
+```{r}
+plot(TMM_boxplot)
+```
