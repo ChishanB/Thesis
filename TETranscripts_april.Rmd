@@ -477,8 +477,8 @@ selected_features3 <- rownames(rld_TEs)[select3]
 
     # Add a column labelling whether miRNAs are upregulated or downregulated
     res_dt <- res_dt %>%
-      mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
-                               if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+      mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < 0, "Sign_Down",
+                               if_else(padj < 0.05 & log2FoldChange > 0, "Sign_Up", "NS"))) 
 
 
     # Create a -log10 column for y-axis of volcano plots
@@ -499,10 +499,10 @@ selected_features3 <- rownames(rld_TEs)[select3]
 
     ################# Troubleshoot
     # Filter rows with padj < 0.05
-    significant_rows <- TE_rows[padj < 0.05, ]
+    #significant_rows <- TE_rows[padj < 0.05, ]
 
     # View the resulting rows
-    print(significant_rows)
+    #print(significant_rows)
     #################
 
     # Declare colours
@@ -514,6 +514,10 @@ selected_features3 <- rownames(rld_TEs)[select3]
     p_adj_threshold <- 0.05
     options(ggrepel.max.overlaps = Inf)
 
+# Arrange in order of descending padj value
+res_dt <- res_dt %>%
+  arrange(desc(padj))
+
 
     plot_1 <- res_dt %>%
       filter(is.na(sign_DE) != TRUE) %>%
@@ -522,20 +526,20 @@ selected_features3 <- rownames(rld_TEs)[select3]
       geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
       scale_color_manual(
         values = colours_1,
-        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       scale_fill_manual(
         values = colours_1,
-        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       scale_alpha_manual(
         values = opacity,
-        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       labs(
         title = "Volcano Plot of Differential Expression (Genes and TEs)",       # Plot title
         x = "Log2 Fold Change",                                       # X-axis label
-        y = "-Log10 Adjusted P-value",                                # Y-axis label
+        y = "-Log10 FDR",                                # Y-axis label
         color = "Effect in treated group",                            # Legend title for color
         fill = "Effect in treated group",                             # Legend title for fill
         alpha = "Effect in treated group"                             # Legend title for alpha
@@ -547,7 +551,15 @@ selected_features3 <- rownames(rld_TEs)[select3]
         legend.text = element_text(size = 14), 
         legend.title = element_text(size = 14)
       )
+    
+    
     ################################
+   
+     # Arrange in order of descending padj value
+mRNA_rows <- mRNA_rows %>%
+  arrange(desc(padj))
+    
+    
     plot_2 <- mRNA_rows %>%
       filter(is.na(sign_DE) != TRUE) %>%
       ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
@@ -555,20 +567,20 @@ selected_features3 <- rownames(rld_TEs)[select3]
       geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
       scale_color_manual(
         values = colours_1,
-        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       scale_fill_manual(
         values = colours_1,
-        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       scale_alpha_manual(
         values = opacity,
-        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       labs(
         title = "Volcano Plot of Differential Expression (Genes)",       # Plot title
         x = "Log2 Fold Change",                                       # X-axis label
-        y = "-Log10 Adjusted P-value",                                # Y-axis label
+        y = "-Log10 FDR",                                # Y-axis label
         color = "Effect in treated group",                            # Legend title for color
         fill = "Effect in treated group",                             # Legend title for fill
         alpha = "Effect in treated group"                             # Legend title for alpha
@@ -580,28 +592,34 @@ selected_features3 <- rownames(rld_TEs)[select3]
         legend.text = element_text(size = 14), 
         legend.title = element_text(size = 14)
       )
+    
     ###################################################
-    plot_3 <- TE_rows %>%
+    
+    # Arrange in order of descending padj value
+TE_rows <- TE_rows %>%
+  arrange(desc(padj))
+    
+     plot_3 <- TE_rows %>%
       filter(is.na(sign_DE) != TRUE) %>%
       ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
       geom_point(size = 5, shape = 21, color = "black") +
       geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
       scale_color_manual(
         values = colours_1,
-        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       scale_fill_manual(
         values = colours_1,
-        labels = c("Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       scale_alpha_manual(
         values = opacity,
-        labels = c("Downregulated", "Not Significant", "Upregulated") # Adjust to your specific categories
+        labels = c("Not Significant", "Downregulated", "Upregulated") # Adjust to your specific categories
       ) +
       labs(
         title = "Volcano Plot of Differential Expression (TEs)",       # Plot title
         x = "Log2 Fold Change",                                       # X-axis label
-        y = "-Log10 Adjusted P-value",                                # Y-axis label
+        y = "-Log10 FDR",                                # Y-axis label
         color = "Effect in treated group",                            # Legend title for color
         fill = "Effect in treated group",                             # Legend title for fill
         alpha = "Effect in treated group"                             # Legend title for alpha
@@ -613,12 +631,21 @@ selected_features3 <- rownames(rld_TEs)[select3]
         legend.text = element_text(size = 14), 
         legend.title = element_text(size = 14)
       )
-    ```
+    
+     
+     
+     
+     
+```
 
 ```{r}
 plot(plot_1)
 plot(plot_2)
 plot(plot_3)
+
+#ggsave("./2_figures/DE_genesandTEs_July.png", plot = plot_1, width = 20, height = 15, units = "cm", dpi = 300)
+#ggsave("./2_figures/DE_genes_July.png", plot = plot_2, width = 20, height = 15, units = "cm", dpi = 300)
+#ggsave("./2_figures/DE_TEs_July.png", plot = plot_3, width = 20, height = 15, units = "cm", dpi = 300)
 
 ```
 
@@ -628,30 +655,108 @@ plot(plot_3)
     ```{r, echo = FALSE, include = FALSE}
 
       
-    # MA plots colour coded to mark genes that are FDR<0.05 – 1 x Gene, 1 x TE
+######## MA plot for genes
+    
+# Turn DeSeq2 object into df and arrange in order of descending padj so coloured points appear on top    
+res_genes <- as.data.frame(res_genes)
+res_genes <- res_genes %>%
+  arrange(desc(padj))
+    
+    
+ma_df <- res_genes %>%
+  mutate(
+    log_baseMean = log10(baseMean + 1),  # log-transform to handle zeros
+    significance = case_when(
+      padj < 0.05 & log2FoldChange > 0 ~ "Upregulated",
+      padj < 0.05 & log2FoldChange < 0 ~ "Downregulated",
+      TRUE ~ "Not significant"
+    )
+  )
 
-    gene_subset <- res[grep("^ENSMUSG\\d+$", rownames(res)), ]
-    # Reverse grep to get rows that do NOT match the pattern
-    TE_subset <- res[!grepl("^ENSMUSG\\d+$", rownames(res)), ]
+
+ma_plot <- ggplot(ma_df, aes(x = log_baseMean, y = log2FoldChange, color = significance)) +
+  geom_point(alpha = 0.9, size = 2) +
+  scale_color_manual(values = c("Upregulated" = "#994455", 
+                                "Downregulated" = "#0077BB", 
+                                "Not significant" = "gray")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  labs(
+    title = "MA Plot (Genes)",
+    x = "Log10 Mean Expression",
+    y = "Log2 Fold Change",
+    color = "Expression"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14)
+  )
+
+# Print it
+print(ma_plot)
+
+#ggsave("./2_figures/genes_MA_plot_July.png", plot = ma_plot, width = 15, height = 6, units = "in", dpi = 300)
+    
+    
+########### MA plot for TEs
+
+# Turn DeSeq2 object into df and arrange in order of descending padj so coloured points appear on top    
+res_TEs <- as.data.frame(res_TEs)
+res_TEs <- res_TEs %>%
+  arrange(desc(padj))    
 
 
-    #pdf("gene_MA_plot.pdf") 
-    # This function highlights points with FDR or padj < 0.05 in blue.
-    plotMA(gene_subset)
-    #dev.off()  
+ma_df <- res_TEs %>%
+  mutate(
+    log_baseMean = log10(baseMean + 1),  # log-transform to handle zeros
+    significance = case_when(
+      padj < 0.05 & log2FoldChange > 0 ~ "Upregulated",
+      padj < 0.05 & log2FoldChange < 0 ~ "Downregulated",
+      TRUE ~ "Not significant"
+    )
+  )
 
+# MA Plot
 
-    ## WHYYYY AM I GETTING 4 HIGHLIGHTED BLUE POINTS HERE
-    plotMA(TE_subset)
+ma_plot2 <- ggplot(ma_df, aes(x = log_baseMean, y = log2FoldChange, color = significance)) +
+  geom_point(alpha = 0.9, size = 2) +
+  scale_color_manual(values = c("Upregulated" = "#994455", 
+                                "Downregulated" = "#0077BB", 
+                                "Not significant" = "gray")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  labs(
+    title = "MA Plot (TEs)",
+    x = "Log10 Mean Expression",
+    y = "Log2 Fold Change",
+    color = "Expression"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14)
+  )
 
-    # Filter DESeq2 results to keep only those with padj < 0.05
-    significant_results <- TE_subset[!is.na(TE_subset$padj) & TE_subset$padj < 0.05, ]
+# Print it
+print(ma_plot2)
 
-    ## WHY IS THERE 2 SIGNIFICANT HERE WHEN I ONLY HAD 1 IN MY VOLCANO PLOT!!!
-    # View the subset of significant results
-    head(significant_results)
+#ggsave("./2_figures/TEs_MA_plot_July.png", plot = ma_plot2, width = 15, height = 6, units = "in", dpi = 300)
 
     ```
+
+```{r}
+print(ma_plot)
+print(ma_plot2)
+
+```
+
+
+
 
 11. Gene Ontology on DE hits – FDR \< 0.05 – generate plots.
 

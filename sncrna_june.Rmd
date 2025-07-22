@@ -193,7 +193,6 @@ levels(sample_metadata$Treatment_group)
 level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
 
 
-
 PCA <- prcomp(t(df), center = TRUE)
 #######
 # Count the number of duplicate values in the column 'xcolumn'
@@ -201,8 +200,6 @@ PCA <- prcomp(t(df), center = TRUE)
 
 # Print the result
 #print(num_duplicates)
-
-
 
 ####
 pca_data <- data.frame(PCA$x)
@@ -239,7 +236,7 @@ PCA_sncRNAs <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, l
 plot(PCA_sncRNAs)
 # Save the plot as a PNG
 #ggsave(
-#  filename = "./3_results/PCA1_sncRNAs.png", 
+#  filename = "./2_figures/prcomp_PCA_sncRNAs.png", 
 #  plot = PCA_sncRNAs,           
 #  width = 8,                    
 #  height = 6,                   
@@ -276,8 +273,8 @@ plot(pca$x[, 1], pca$x[, 2], main = "PCA of VST-transformed small RNA data",
 
 # Annotate significant DE results
 res_df <- res_df %>%
-  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
-                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS")))
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < 0, "Downregulated",
+                           if_else(padj < 0.05 & log2FoldChange > 0, "Upregulated", "NS")))
 
 # Add a -log10 column for volcano plot
 res_df <- res_df %>% mutate(log_padj = -log10(padj))
@@ -285,9 +282,13 @@ res_df <- res_df %>% mutate(log_padj = -log10(padj))
 # Save results to CSV
 #write.csv(res_df, file = "./1_data/sncRNA_june/deseq_sncrnas_june.csv")
 
+# Ensures the points which have padj < 0.05 are shown in the front for aesthetic reasons
+res_df <- res_df %>%
+  arrange(desc(padj))
+
 # Volcano Plot
-colours_1 <- c("Sign_Up" = "#994455", "Sign_Down" = "#0077BB", "NS" = "#BBBBBB") 
-opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+colours_1 <- c("Upregulated" = "#994455", "Downregulated" = "#0077BB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1)
 
 plot_1 <- res_df %>%
   filter(!is.na(sign_DE)) %>%
@@ -297,10 +298,24 @@ plot_1 <- res_df %>%
   scale_color_manual(values = colours_1) + 
   scale_fill_manual(values = colours_1) +
   scale_alpha_manual(values = opacity) + 
+  labs(
+    title = 'Volcano Plot of Differential Expression (sncRNAs)',
+    x = "Log2 Fold Change",           # Change this to your desired x-axis label
+    y = "-Log10 FDR",    # Change this to your desired y-axis label
+    color = "Effect in treated group",           # Optional: legend title for color
+    fill = "Effect in treated group",            # Optional: legend title for fill
+    alpha = "Effect in treated group"            # Optional: legend title for alpha
+  ) +
   theme_bw() +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
-        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18), 
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  )
 
+print(plot_1)
+#ggsave("./2_figures/DE_sncRNAs_July.png", plot = plot_1, width = 20, height = 15, units = "cm", dpi = 300)
 
 ```
 
@@ -323,9 +338,26 @@ plot_2 <- mature_miRNA_df %>%
   scale_color_manual(values = colours_1) + 
   scale_fill_manual(values = colours_1) +
   scale_alpha_manual(values = opacity) + 
+  labs(
+    title = "Volcano Plot of Differential Expression (mature miRNAs)",
+    x = "Log2 Fold Change",           # Change this to your desired x-axis label
+    y = "-Log10 FDR",    # Change this to your desired y-axis label
+    color = "Effect in treated group",           # Optional: legend title for color
+    fill = "Effect in treated group",            # Optional: legend title for fill
+    alpha = "Effect in treated group"            # Optional: legend title for alpha
+  ) +
   theme_bw() +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
-        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18), 
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  )
+
+
+#ggsave("./2_figures/DE_mature_miRNAs_July.png", plot = plot_2, width = 20, height = 15, units = "cm", dpi = 300)
+
+
 
 # Display plot
 plot(plot_2)
@@ -335,6 +367,7 @@ rows <- grep("hairpin", rownames(res_df))
 hairpin_miRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
 print(hairpin_miRNA_df)
 
+
 plot_3 <- hairpin_miRNA_df %>%
   filter(!is.na(sign_DE)) %>%
   ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
@@ -343,9 +376,24 @@ plot_3 <- hairpin_miRNA_df %>%
   scale_color_manual(values = colours_1) + 
   scale_fill_manual(values = colours_1) +
   scale_alpha_manual(values = opacity) + 
+   labs(
+    title = 'Volcano Plot of Differential Expression (hairpin miRNAs)',
+    x = "Log2 Fold Change",           # Change this to your desired x-axis label
+    y = "-Log10 FDR",    # Change this to your desired y-axis label
+    color = "Effect in treated group",           # Optional: legend title for color
+    fill = "Effect in treated group",            # Optional: legend title for fill
+    alpha = "Effect in treated group"            # Optional: legend title for alpha
+  ) +
   theme_bw() +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
-        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18), 
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  )
+
+
+#ggsave("./2_figures/DE_hairpin_miRNAs_July.png", plot = plot_3, width = 20, height = 15, units = "cm", dpi = 300)
 
 # Display plot
 plot(plot_3)
@@ -364,9 +412,23 @@ plot_4 <- piRNA_df %>%
   scale_color_manual(values = colours_1) + 
   scale_fill_manual(values = colours_1) +
   scale_alpha_manual(values = opacity) + 
+     labs(
+    title = 'Volcano Plot of Differential Expression (piRNAs)',
+    x = "Log2 Fold Change",           # Change this to your desired x-axis label
+    y = "-Log10 FDR",    # Change this to your desired y-axis label
+    color = "Effect in treated group",           # Optional: legend title for color
+    fill = "Effect in treated group",            # Optional: legend title for fill
+    alpha = "Effect in treated group"            # Optional: legend title for alpha
+  ) +
   theme_bw() +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
-        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18), 
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  )
+
+#ggsave("./2_figures/DE_piRNAs_July.png", plot = plot_4, width = 20, height = 15, units = "cm", dpi = 300)
 
 # Display plot
 plot(plot_4)
@@ -385,9 +447,23 @@ plot_5 <- rRNA_df %>%
   scale_color_manual(values = colours_1) + 
   scale_fill_manual(values = colours_1) +
   scale_alpha_manual(values = opacity) + 
+     labs(
+    title = 'Volcano Plot of Differential Expression (rRNAs)',
+    x = "Log2 Fold Change",           # Change this to your desired x-axis label
+    y = "-Log10 FDR",    # Change this to your desired y-axis label
+    color = "Effect in treated group",           # Optional: legend title for color
+    fill = "Effect in treated group",            # Optional: legend title for fill
+    alpha = "Effect in treated group"            # Optional: legend title for alpha
+  ) +
   theme_bw() +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
-        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18), 
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  )
+
+#ggsave("./2_figures/DE_rRNAs_July.png", plot = plot_5, width = 20, height = 15, units = "cm", dpi = 300)
 
 # Display plot
 plot(plot_5)
@@ -406,12 +482,25 @@ plot_6 <- snoRNA_df %>%
   scale_color_manual(values = colours_1) + 
   scale_fill_manual(values = colours_1) +
   scale_alpha_manual(values = opacity) + 
+    labs(
+    title = 'Volcano Plot of Differential Expression (snoRNAs)',
+    x = "Log2 Fold Change",           # Change this to your desired x-axis label
+    y = "-Log10 FDR",    # Change this to your desired y-axis label
+    color = "Effect in treated group",           # Optional: legend title for color
+    fill = "Effect in treated group",            # Optional: legend title for fill
+    alpha = "Effect in treated group"            # Optional: legend title for alpha
+  ) +
   theme_bw() +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
-        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18), 
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  )
 
 plot(plot_6)
 
+#ggsave("./2_figures/DE_snoRNAs_July.png", plot = plot_6, width = 20, height = 15, units = "cm", dpi = 300)
 
 # snRNA
 rows <- grep("snRNA", rownames(res_df))
@@ -419,11 +508,7 @@ snRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
 print(snRNA_df)
 
 
-rows <- grep("snoRNA", rownames(res_df))
-snoRNA_df <- res_df[rows, , drop = FALSE] # Ensure drop=FALSE to keep full rows
-print(snoRNA_df)
-
-plot_6 <- snRNA_df %>%
+plot_7 <- snRNA_df %>%
   filter(!is.na(sign_DE)) %>%
   ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
   geom_point(size = 5, shape = 21, color = "black") +
@@ -431,11 +516,25 @@ plot_6 <- snRNA_df %>%
   scale_color_manual(values = colours_1) + 
   scale_fill_manual(values = colours_1) +
   scale_alpha_manual(values = opacity) + 
+   labs(
+    title = 'Volcano Plot of Differential Expression (snRNAs)',
+    x = "Log2 Fold Change",           # Change this to your desired x-axis label
+    y = "-Log10 FDR",    # Change this to your desired y-axis label
+    color = "Effect in treated group",           # Optional: legend title for color
+    fill = "Effect in treated group",            # Optional: legend title for fill
+    alpha = "Effect in treated group"            # Optional: legend title for alpha
+  ) +
   theme_bw() +
-  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
-        legend.text = element_text(size = 14), legend.title = element_text(size = 14))
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18), 
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  )
 
-plot(plot_6)
+plot(plot_7)
+
+#ggsave("./2_figures/DE_snRNAs_July.png", plot = plot_7, width = 20, height = 15, units = "cm", dpi = 300)
 
 
 
@@ -478,7 +577,54 @@ plot(plot_5)
 plot(plot_6)
 ```
 
-mRNA target prediction
+# plotPCA()
+```{r}
+# Relevel the Treatment_group factor
+#sample_metadata$Treatment_group <- relevel(sample_metadata$Treatment_group, ref = "Control")
+
+# DE analysis
+#dds <- DESeqDataSetFromMatrix(countData = df,
+#                              colData = sample_metadata,
+#                              design = ~Treatment_group)
+#dds <- DESeq(dds)
+
+# Apply the transformation (rlog or vst)
+    rld_all <- rlog(dds)  # or vst(dds)
+    
+    # Perform PCA and extract data
+    plotPCA_data <- plotPCA(rld_all, intgroup = "Treatment_group", returnData = TRUE)
+
+    # Add sample names from colData
+    plotPCA_data$SampleID <- rownames(plotPCA_data)
+
+    percent_variance <- round(100 * attr(plotPCA_data, "percentVar"))
+
+    # Create PCA plot with sample names as labels
+ plotPCA_plot <- ggplot(plotPCA_data, aes(x = PC1, y = PC2, color = Treatment_group, label = SampleID)) +
+  geom_point(size = 3) +  
+  geom_text_repel(     
+    max.overlaps = Inf, 
+    size = 3.5            
+  ) +
+  labs(
+    title = "Dimensionality Reduction Highlights Transcriptomic Shifts in SV (sncRNAs)",
+    x = paste0("PC1 (", percent_variance[1], "%)"),
+    y = paste0("PC2 (", percent_variance[2], "%)"),
+    color = "Treatment Group"
+  ) +
+  scale_colour_manual(values = level_colors) +
+  theme_gray()
+
+    
+  plot(plotPCA_plot)
+  
+  
+#ggsave("./2_figures/plotPCA_PCA_sncRNAs.png", plot = plotPCA_plot, width = 20, height = 15, units = "cm", dpi = 300)
+
+```
+
+
+# mRNA target prediction
 ```{r}
 
 # We want to identify mRNAs which are targeted by upregulated and downregulated miRNAs
@@ -754,6 +900,8 @@ print(KEGG_enrichment_results)
 
 GO analysis of mRNA targets.
 ```{r}
+library(clusterProfiler)
+library(enrichplot)
 
 # Produced during KEGG analysis section
 # ENSEMBL HIT LIST
@@ -800,14 +948,15 @@ edox2 <- pairwise_termsim(go_enrich)
 
 ### Tree plots
 p1 <- treeplot(edox2, offset = 10)
+
 plot(p1)
 
-#ggsave("./2_figures/sncRNA_GO_treeplot1.png", plot = p1, width = 15, height = 6, units = "in", dpi = 300)
+#ggsave("./2_figures/sncRNA_GO_treeplot1.png", plot = p1, width = 15, height = 9, units = "in", dpi = 300)
 
 p2 <- treeplot(edox2, hclust_method = "average", offset = 10)
 plot(p2)
 
-#ggsave("./2_figures/sncRNA_GO_treeplot2.png", plot = p2, width = 15, height = 6, units = "in", dpi = 300)
+#ggsave("./2_figures/sncRNA_GO_treeplot2.png", plot = p2, width = 15, height = 9, units = "in", dpi = 300)
 
 p3 <- treeplot(edox2, offset = 7,
                nCluster = 5, # default is 5. Changes number of groups clustered
@@ -818,8 +967,6 @@ plot(p3)
 
 
 ```
-
-
 
 
 
@@ -950,3 +1097,50 @@ It's only slightly different
 ```{r}
 plot(TMM_boxplot)
 ```
+
+
+# MA plot
+An MA plot is a visualization tool used in genomics and proteomics to compare two sets of measurements or conditions, particularly in the context of differential expression analysis. It plots the log ratio (M) of measurements against the average of the measurements (A) on a log scale. This allows researchers to quickly assess the relationship between fold change and overall expression levels, helping to identify differentially expressed features between the two conditions being compared. 
+```{r}
+# Assuming res_df is your DESeq2 results data.frame
+ma_df <- res_df %>%
+  mutate(
+    log_baseMean = log10(baseMean + 1),  # log-transform to handle zeros
+    significance = case_when(
+      padj < 0.05 & log2FoldChange > 0 ~ "Upregulated",
+      padj < 0.05 & log2FoldChange < 0 ~ "Downregulated",
+      TRUE ~ "Not significant"
+    )
+  )
+
+# MA Plot
+
+ma_plot <- ggplot(ma_df, aes(x = log_baseMean, y = log2FoldChange, color = significance)) +
+  geom_point(alpha = 0.9, size = 2) +
+  scale_color_manual(values = c("Upregulated" = "#994455", 
+                                "Downregulated" = "#0077BB", 
+                                "Not significant" = "gray")) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +
+  labs(
+    title = "MA Plot (sncRNAs)",
+    x = "Log10 Mean Expression",
+    y = "Log2 Fold Change",
+    color = "Expression"
+  ) +
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold", hjust = 0.5),
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14)
+  )
+
+# Print it
+print(ma_plot)
+
+#ggsave("./2_figures/sncRNA_MA_plot_July.png", plot = ma_plot, width = 15, height = 6, units = "in", dpi = 300)
+
+
+```
+
