@@ -1,0 +1,916 @@
+---
+title: "DE analysis of miRMaster outputs"
+author: "Chishan Burch"
+date: "2025-01-14"
+output: 
+---blue
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE, 
+  warning = FALSE, 
+  echo = TRUE, 
+  results = 'hide'
+)
+
+```
+
+```{r, echo=FALSE, message=FALSE}
+
+library(data.table)
+library(dplyr)
+library(tibble)
+library(DESeq2)
+library(ggplot2)
+library(openxlsx)
+library(pheatmap)
+
+miRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/expression_known_mirnas.csv")
+piRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/piRNA_quant.csv")
+rRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/rRNA_quant.csv")
+snoRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/snoRNA_quant.csv")
+tRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/tRNA_quant.csv")
+snRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/snRNA_quant.csv")
+miscRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/miscRNA_quant.csv")
+scaRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/scaRNA_quant.csv")
+circRNA <- read.csv("./1_data/miRMaster_raw_formatted/miRMaster_vt8qq2fe/circRNA_quant.csv")
+
+sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
+
+```
+
+January 14th, 2025
+
+
+
+## Purpose
+
+The purpose of this pdf is to display a series of DE analysis results created using DESeq2 for the purpose of comparing them to those generated with miRMaster using the same dataset. We are doing this because DESeq2 utilises Benjamini-Hochberg method to adjust p-values, whereas miRMaster uses Wilcox, and we want to know whether the two methods yield similar results. The miRMaster results are not contained in this document.
+
+## Notes
+
+The data that was used is located in <https://drive.google.com/drive/folders/1e1354MEyKLuyauwAsU5VEiHUWBqFU2T-> under 'raw_miRMaster_outputs'.
+
+
+
+
+
+## Key for volcano plots
+
+-   padj ≤ 0.05 & log2FoldChange ≤ -0.585 = sign down
+
+-   padj ≤ 0.05 & log2FoldChange ≥ 0.585 = sign up
+
+-   padj ≥ 0.05 = NS (coloured grey)
+
+x - axis = log2FoldChange y - axis = -log10(padj)
+
+## miRNAs
+
+
+```{r, echo=FALSE, message=FALSE}
+# Remove the 'precursor' column
+miRNA <- miRNA[ ,-1]
+
+# Rename the 'miRNA' column to 'Reference'
+colnames(miRNA)[colnames(miRNA) == "miRNA"] <- "Reference"
+
+data <- miRNA
+
+# Define data()# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+
+# Set the columns as the row names 
+data <- data %>%
+  tibble::column_to_rownames(var = "Reference")
+
+duplicates <- data$ID[duplicated(data$Reference) | duplicated(data$Reference, fromLast = TRUE)]
+print(duplicates)
+
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed miRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_1 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_1)
+
+
+```
+
+## piRNAs
+
+-   598 rows before filtering
+
+-   160 rows after filtering
+
+```{r, echo=FALSE, message=FALSE}
+# Set the columns as the row names 
+data <- piRNA %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+
+pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed piRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_2 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_2)
+```
+
+## rRNAs
+
+-   164 rows before filtering
+
+-   125 rows after filtering
+
+```{r, echo=FALSE, message=FALSE}
+
+# Set the columns as the row names 
+data <- rRNA %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+
+pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed rRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_3 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_3)
+```
+
+## tRNA
+
+-   403 rows before filtering
+
+-   346 rows after filtering
+
+```{r echo=FALSE, message=FALSE}
+
+# Set the columns as the row names 
+data <- tRNA %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+
+pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed tRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_4 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_4)
+
+
+```
+
+## snRNA
+
+-   722 rows before filtering
+
+-   394 rows after filtering
+
+The unfiltered snRNA data contains 722 rows (sncRNA IDs). After filtering for at least 5 counts across at least 3 samples, and removing rows containing NA values, 394 rows remain. Attempts at PCA return the error ' Error in svd(x, nu = 0, nv = k) : infinite or missing values in 'x' '.
+
+The volcano plot still works.
+
+```{r, echo=FALSE, message=FALSE}
+# Set the columns as the row names 
+data <- snRNA %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+#vsd <- varianceStabilizingTransformation(dds, blind = T) 
+#vst_matrix <- assay(vsd)
+
+
+#pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+#plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed snRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_5 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_5)
+```
+
+## circRNA
+
+-   3069 rows before filtering
+
+-   1029 rows after filtering
+
+```{r, echo=FALSE, message=FALSE}
+# Set the columns as the row names 
+data <- circRNA %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+
+pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed circRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_6 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_6)
+```
+
+## snoRNA
+
+-   384 rows before filtering
+
+-   61 rows after filtering
+
+The unfiltered snoRNA data contains 384 rows. After filtering for at least 5 counts across at least 3 samples, and removing rows containing NA values, 61 rows remain. Attempting DESeq2 analysis returns the error ' Error in lfproc(x, y, weights = weights, cens = cens, base = base, geth = geth, : newsplit: out of vertex space '
+
+It is suspected that the extremely low counts in each column increases computational complexity beyond what my computer is capable of processing, so DESeq2 analysis fails.
+
+I don't think the problem is sample size because the miRNA data has 67 rows after filtering (only 6 more), and still produces a PCA plot and a volcano plot after going through an identical pipeline.
+
+Since DESeq2 won't work on this dataset on my computer, there is no PCA or volcano plot.
+
+## scaRNA
+
+-   20 rows before filtering
+
+-   2 rows after filtering
+
+```{r, echo=FALSE, message=FALSE}
+# Set the columns as the row names 
+data <- scaRNA %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+
+pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed scaRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_7 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_7)
+```
+
+## miscRNA
+
+-   86 rows before filtering
+
+-   27 rows after filtering
+
+```{r, echo=FALSE,message=FALSE}
+# Set the columns as the row names 
+data <- miscRNA %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+
+pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed miscRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_8 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_8)
+```
+
+## All sncRNAs
+
+-   5743 rows before filtering
+
+-   2211 rows after filtering
+
+mmu-miR-6239 has a p-adjusted value of 0.05050743. It stands out as the sncRNA across the whole dataset closest to meeting significance thresholds (see table after volcano plot and PCA).
+
+```{r, echo=FALSE, message=FALSE}
+
+# Stack those data frames
+data <- rbind(miRNA, piRNA, rRNA, snoRNA, tRNA, snRNA, miscRNA, scaRNA, circRNA)
+##might need to add another column tagging RNA type if I ever want to colour scatter plot based on rna subtype
+
+
+data <- data %>%
+  tibble::column_to_rownames(var = "Reference")
+
+# Define thresholds 
+min.counts <- 5
+min.samples <- 3
+
+# Initial filter
+data <- data %>%
+  filter(rowSums(. >= min.counts) >= min.samples)
+
+# Remove rows containing NA values
+if (any(is.na(data))) {
+  data <- data[complete.cases(data), ]
+}
+
+# DE analysis
+dds <- DESeqDataSetFromMatrix(countData = data,
+                              colData = sample_metadata,
+                              desig = ~ Treatment_group)
+
+dds <- DESeq(dds)
+
+
+res <- results(dds, contrast = c("Treatment_group","Acr","Control")) 
+
+levels(sample_metadata$Treatment_group)
+
+res_df <- as.data.frame(res) # Coerce into a more easily accessible format.
+
+# Remove rows containing NA values
+if (any(is.na(res_df))) {
+  res_df <- res_df[complete.cases(res_df), ]
+}
+
+#VST matrix
+vsd <- varianceStabilizingTransformation(dds, blind = T) 
+vst_matrix <- assay(vsd)
+
+
+pca <- prcomp(t(vst_matrix))
+
+# Plot the first two principal components
+plot(pca$x[,1], pca$x[,2], main = "PCA of VST-transformed sncRNA data", xlab = "PC1", ylab = "PC2")
+
+# Add a column labelling whether miRNAs are upregulated or downregulated
+res_df <- res_df %>%
+  mutate(sign_DE = if_else(padj < 0.05 & log2FoldChange < -0.585, "Sign_Down",
+                           if_else(padj < 0.05 & log2FoldChange > 0.585, "Sign_Up", "NS"))) 
+
+
+# Create a -log10 column for y-axis of volcano plots
+res_df <- res_df %>% mutate(log_padj = -log10(padj))
+
+
+
+# Declare colours
+colours_1 <- c("Sign_Up" = "#AA3377", "Sign_Down" = "#228833", "NS" = "#BBBBBB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1, "NS" = 0.5)
+
+# Declare padj threshold
+p_adj_threshold <- 0.05
+options(ggrepel.max.overlaps = Inf)
+
+# Plot
+plot_9 <- res_df %>%
+  filter(is.na(sign_DE) != TRUE) %>%
+  ggplot(aes(x = log2FoldChange, y = -log10(padj), col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(p_adj_threshold), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + theme_bw() +
+  theme(axis.text = element_text(size = 14), axis.title = element_text(size = 18), 
+        legend.text = element_text(size = 14), legend.title = element_text(size = 14)) 
+plot(plot_9)
+
+
+outlier <- res_df %>%
+    arrange(desc(-log10(padj)))
+
+outlier2 <- outlier %>%
+  filter(pvalue <= 0.05)
+
+
+#write.xlsx(outlier, file = "./1_data/miRMaster_DESeq2_output.xlsx", rowNames = TRUE)
+
+
+```
+
+Here are the sncRNAs with the 6 lowest adjusted p-values.
+
++---------------+------------+----------------+-----------+------------+--------------+------------+---+---+
+|               | baseMean   | log2FoldChange | lfcSE     | stat       | pvalue       | padj       |   |   |
+|               |            |                |           |            |              |            |   |   |
+|               | \<dbl\>    | \<dbl\>        | \<dbl\>   | \<dbl\>    | \<dbl\>      | \<dbl\>    |   |   |
++:==============+===========:+===============:+==========:+===========:+=============:+===========:+:==+===+
+| mmu-miR-6239  | 146.221632 | -0.97707829    | 0.2307644 | -4.2340940 | 2.294749e-05 | 0.05050743 |   |   |
++---------------+------------+----------------+-----------+------------+--------------+------------+---+---+
+| mmu-let-7a-5p | 209.712192 | 0.33473545     | 0.2275670 | 1.4709316  | 1.413096e-01 | 0.99902392 |   |   |
++---------------+------------+----------------+-----------+------------+--------------+------------+---+---+
+| mmu-let-7b-5p | 242.333435 | 0.19261654     | 0.2656084 | 0.7251899  | 4.683356e-01 | 0.99902392 |   |   |
++---------------+------------+----------------+-----------+------------+--------------+------------+---+---+
+| mmu-let-7c-5p | 629.806529 | 0.05926036     | 0.2255578 | 0.2627281  | 7.927602e-01 | 0.99902392 |   |   |
++---------------+------------+----------------+-----------+------------+--------------+------------+---+---+
+| mmu-let-7d-3p | 9.487118   | -0.05804589    | 0.5639456 | -0.1029282 | 9.180200e-01 | 0.99902392 |   |   |
++---------------+------------+----------------+-----------+------------+--------------+------------+---+---+
+| mmu-let-7d-5p | 19.274869  | 0.17562820     | 0.4706084 | 0.3731939  | 7.090041e-01 | 0.99902392 |   |   |
++---------------+------------+----------------+-----------+------------+--------------+------------+---+---+
+
+```         
+```
