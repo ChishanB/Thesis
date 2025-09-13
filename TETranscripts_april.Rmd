@@ -711,7 +711,7 @@ res_TEs <- res_TEs %>%
 
 ma_df <- res_TEs %>%
   mutate(
-    log_baseMean = log10(baseMean + 1),  # log-transform to handle zeros
+    log_baseMean = log10(baseMean + 1),  
     significance = case_when(
       padj < 0.05 & log2FoldChange > 0 ~ "Upregulated",
       padj < 0.05 & log2FoldChange < 0 ~ "Downregulated",
@@ -722,7 +722,7 @@ ma_df <- res_TEs %>%
 # MA Plot
 
 ma_plot2 <- ggplot(ma_df, aes(x = log_baseMean, y = log2FoldChange, color = significance)) +
-  geom_point(alpha = 0.9, size = 2) +
+  geom_point(alpha = 0.9, size = 4) +
   scale_color_manual(values = c("Upregulated" = "#994455", 
                                 "Downregulated" = "#0077BB", 
                                 "Not significant" = "gray")) +
@@ -1364,6 +1364,8 @@ ggplot(TMM_long, aes(x = Sample, y = log2(Expression + 1))) +
 
 # as seen in the link Sean sent, I'm supposed to log2 the raw counts and the TMM counts (it helps with skewing)
 
+
+```
 
 ```
 
