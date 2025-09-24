@@ -1062,10 +1062,21 @@ TMM_gene_matrix <- cpm(y, normalized.lib.sizes = TRUE)
 
 # Start plotting
 # Perform PCA
+all_PCA <- prcomp(t(TMM_matrix), center = TRUE, scale. = TRUE)
+
+TE_PCA <- prcomp(t(TMM_TE_matrix), center = TRUE, scale. = TRUE)
+
+gene_PCA <- prcomp(t(TMM_gene_matrix), center = TRUE, scale. = TRUE)
 
 # Create PCA data frame
 pca_data <- data.frame(all_PCA$x)
 pca_data$SampleID <- rownames(pca_data)
+
+    # A = Acrylamide, P = Control
+sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
+
+sample_metadata$Treatment_group <- as.factor(sample_metadata$Treatment_group)
+    levels(sample_metadata$Treatment_group)
 
 # Ensure SampleID is a common column for merging
 if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadata)) {
@@ -1075,11 +1086,11 @@ if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadat
 }
 
 # Set colors for the groups
-level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+level_colors <- c("Acr" = "#cc5500", "Control" = "#0077BB")
 
 
 # Plot 
-all_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+#all_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
 
 # Extract percentage of variance explained
 variance_explained <- 100 * all_PCA$sdev^2 / sum(all_PCA$sdev^2)
@@ -1097,7 +1108,7 @@ TEsandgenes_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_grou
   guides(color = guide_legend(title = "Treatment group")) +
   theme_minimal() 
 
-#ggsave("./2_figures/TEsandgenes_PCA.png", plot = TEsandgenes_PCA, width = 8, height = 4, dpi = 300)
+
 
 # Create PCA data frame
 pca_data <- data.frame(TE_PCA$x)
@@ -1111,11 +1122,11 @@ if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadat
 }
 
 # Set colors for the groups
-level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+level_colors <- c("Acr" = "#cc5500", "Control" = "#0077BB")
 
 
 # Plot 
-TE_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+#TE_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
 
 # Extract percentage of variance explained
 variance_explained <- 100 * TE_PCA$sdev^2 / sum(TE_PCA$sdev^2)
@@ -1147,11 +1158,11 @@ if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadat
 }
 
 # Set colors for the groups
-level_colors <- c("Acr" = "#994455", "Control" = "#0077BB")
+level_colors <- c("Acr" = "#cc5500", "Control" = "#0077BB")
 
 
 # Plot 
-gene_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
+#gene_PCA <- prcomp(pca_data[, c("PC1", "PC2")], center = TRUE, scale. = TRUE)
 
 # Extract percentage of variance explained
 variance_explained <- 100 * gene_PCA$sdev^2 / sum(gene_PCA$sdev^2)
@@ -1171,10 +1182,19 @@ gene_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, labe
 
 #ggsave("./2_figures/gene_PCA.png", plot = gene_PCA, width = 8, height = 4, dpi = 300)
 
+```
+
+
+```{r}
 plot(gene_PCA)
 plot(TE_PCA)
 plot(TEsandgenes_PCA)
+```
 
+```{r}
+#ggsave("./2_figures/prcomp_TMM_genes_PCA.png", plot = gene_PCA, width = 8, height = 4, dpi = 300)
+#ggsave("./2_figures/prcomp_TMM_TEs_PCA.png", plot = TE_PCA, width = 8, height = 4, dpi = 300)
+#ggsave("./2_figures/prcomp_TMM_TEsandgenes_PCA.png", plot = TEsandgenes_PCA, width = 8, height = 4, dpi = 300)
 ```
 
 15. (Leave 6 and 15 for end) Filter TMM data frame for the ones identified by plotPCA (step 5/6)
@@ -1366,4 +1386,5 @@ ggplot(TMM_long, aes(x = Sample, y = log2(Expression + 1))) +
 
     
     
+
 
