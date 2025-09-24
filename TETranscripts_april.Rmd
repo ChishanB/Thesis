@@ -1062,11 +1062,6 @@ TMM_gene_matrix <- cpm(y, normalized.lib.sizes = TRUE)
 
 # Start plotting
 # Perform PCA
-all_PCA <- prcomp(t(TMM_matrix), center = FALSE)
-
-TE_PCA <- prcomp(t(TMM_TE_matrix), center = FALSE)
-
-gene_PCA <- prcomp(t(TMM_gene_matrix), center = FALSE)
 
 # Create PCA data frame
 pca_data <- data.frame(all_PCA$x)
@@ -1371,3 +1366,4 @@ ggplot(TMM_long, aes(x = Sample, y = log2(Expression + 1))) +
 
     
     
+
