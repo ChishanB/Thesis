@@ -169,5 +169,68 @@ enrichplot::dotplot(go_enrich)
 #  dpi = 300             # resolution (dots per inch)
 #)
 
+######## Adding in a volcano plot
+library(ggplot2)
+
+DE_results <- fread("./3_results/april_DESeq_genes.csv")
+
+DE_results <- DE_results %>%
+  rename(target_ensembl = V1)
+
+DE_results <- DE_results %>%
+  dplyr::mutate(sign_DE = if_else(log2FoldChange > 0, 
+                           "Upregulated", 
+                           "Downregulated"))
+
+DE_results <- DE_results %>% 
+  dplyr::mutate(log_padj = -log10(padj))
+
+
+x <- semi_join(DE_results, DE_validated, by = "target_ensembl") %>%
+  distinct(target_ensembl, .keep_all = TRUE)
+
+
+## need to ad log_padj column
+
+# Ensures the points which have padj < 0.05 are shown in the front for aesthetic reasons
+x <- x %>%
+  arrange(desc(padj))
+
+# Volcano Plot
+colours_1 <- c("Upregulated" = "#994455", "Downregulated" = "#0077BB") 
+opacity <- c("Sign_Up" = 1, "Sign_Down" = 1)
+
+plot_1 <- x %>%
+  filter(!is.na(sign_DE)) %>%
+  ggplot(aes(x = log2FoldChange, y = log_padj, col = sign_DE, alpha = sign_DE, fill = sign_DE)) +
+  geom_point(size = 5, shape = 21, color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", size = 0.4, col = "#3A3B3C") +
+  scale_color_manual(values = colours_1) + 
+  scale_fill_manual(values = colours_1) +
+  scale_alpha_manual(values = opacity) + 
+  labs(
+    title = 'Volcano Plot of Differential Expression (DE targets of DE miRNAs)',
+    x = "Log2 Fold Change",           # Change this to your desired x-axis label
+    y = "-Log10 FDR",    # Change this to your desired y-axis label
+    color = "Effect in treated group",           # Optional: legend title for color
+    fill = "Effect in treated group",            # Optional: legend title for fill
+    alpha = "Effect in treated group"            # Optional: legend title for alpha
+  ) +
+  theme_bw() +
+  theme(
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 18), 
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 14)
+  )
+
+print(plot_1)
+#ggsave("./2_figures/DE_targets_of_DE_miRNAs.png", plot = plot_1, width = 20, height = 15, units = "cm", dpi = 300)
+
+
+
+
+
+
 
 
