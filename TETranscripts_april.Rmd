@@ -1058,6 +1058,8 @@ TMM_gene_matrix <- cpm(y, normalized.lib.sizes = TRUE)
 #write.csv(TMM_gene_matrix, file = "./3_results/transcriptomic_rerun_TMM_matrix_genes.csv", row.names = TRUE)
 
 
+
+######################
 # 3. PCA plots – 1 x Gene, 1 x TE, 1 x ALL 
 
 # Start plotting
@@ -1072,11 +1074,11 @@ gene_PCA <- prcomp(t(TMM_gene_matrix), center = TRUE, scale. = TRUE)
 pca_data <- data.frame(all_PCA$x)
 pca_data$SampleID <- rownames(pca_data)
 
-    # A = Acrylamide, P = Control
+# A = Acrylamide, P = Control
 sample_metadata <- read.csv("./1_data/sncRNA_sample_metadata.csv")
 
 sample_metadata$Treatment_group <- as.factor(sample_metadata$Treatment_group)
-    levels(sample_metadata$Treatment_group)
+levels(sample_metadata$Treatment_group)
 
 # Ensure SampleID is a common column for merging
 if ("SampleID" %in% colnames(pca_data) & "SampleID" %in% colnames(sample_metadata)) {
@@ -1144,7 +1146,7 @@ TE_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, label 
   guides(color = guide_legend(title = "Treatment group")) +
   theme_minimal() 
 
-#ggsave("./2_figures/TE_PCA.png", plot = TE_PCA, width = 8, height = 4, dpi = 300)
+#ggsave("./2_figures/TE_PCA_oct.png", plot = TE_PCA, width = 8, height = 4, dpi = 300)
 
 # Create PCA data frame
 pca_data <- data.frame(gene_PCA$x)
@@ -1180,16 +1182,15 @@ gene_PCA <- ggplot(pca_data, aes(x = PC1, y = PC2, color = Treatment_group, labe
   guides(color = guide_legend(title = "Treatment group")) +
   theme_minimal() 
 
-#ggsave("./2_figures/gene_PCA.png", plot = gene_PCA, width = 8, height = 4, dpi = 300)
+#ggsave("./2_figures/gene_PCA_oct.png", plot = gene_PCA, width = 8, height = 4, dpi = 300)
 
-```
-
-
-```{r}
 plot(gene_PCA)
 plot(TE_PCA)
 plot(TEsandgenes_PCA)
+
 ```
+
+
 
 ```{r}
 #ggsave("./2_figures/prcomp_TMM_genes_PCA.png", plot = gene_PCA, width = 8, height = 4, dpi = 300)
@@ -1386,5 +1387,6 @@ ggplot(TMM_long, aes(x = Sample, y = log2(Expression + 1))) +
 
     
     
+
 
 
