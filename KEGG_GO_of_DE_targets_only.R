@@ -54,6 +54,8 @@ head(DE_results)
 DE_validated <- semi_join(miRNA_targets, DE_results, by = "target_ensembl") %>%
   distinct(target_ensembl, .keep_all = TRUE)
 
+# Save this 
+#write.csv(DE_validated, file = "./3_results/oct_multimiR_DE_targets_of_DE_miRNA.csv")
 
 ## KEGG and GO-ORA (step 3)
 
@@ -226,6 +228,7 @@ plot_1 <- x %>%
 
 print(plot_1)
 #ggsave("./2_figures/DE_targets_of_DE_miRNAs.png", plot = plot_1, width = 20, height = 15, units = "cm", dpi = 300)
+
 
 
 
