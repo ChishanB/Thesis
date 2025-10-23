@@ -1,12 +1,7 @@
-# Purpose: Previously, the KEGG and GO-ORA were done on all the validated targets of the miRNA (over 16 000)
-# This time, we're doing KEGG and GO-ORA on the DE validated targets only (100). 
+# Purpose: Editing to use genes + TE Deseq results instead of just the genes results
 
-# Steps: 
-# 1 Get list of DE genes from previous DE results
-# 2 Identify which ones of these are also validated targets of DE miRNA
-# 3 Get their entrez ids and do KEGG + GO-ORA
+# Date: 23.10.25
 
-# Date: 20.9.25
 
 # Author: Chishan Burch
 
@@ -20,10 +15,18 @@ library(clusterProfiler)
 
 ## Data preparation steps 1-2
 # get significantly DE (padj < 0.05) genes
-DE_results <- fread("./3_results/april_DESeq_genes.csv")
+DE_results <- fread("./3_results/april_DESeq_genesandTEs.csv")
 
-DE_results <- DE_results %>%
-  filter(padj < 0.05)
+
+# Remove TEs
+DE_results <- DE_results[grepl("ENSMUS", DE_results$ensembl.TE), ]
+
+# Apply basic QC
+DE_results <- DE_results[!is.na(DE_results$padj) & DE_results$padj < 0.05, ]
+
+# Remove extra column 
+DE_results <- DE_results[, !"V1"]
+
 
 # get validated miRNAs from previous analyses
 
@@ -47,7 +50,7 @@ miRNA_targets <- rbind(miRNA_targets_up,miRNA_targets_down)
 DE_results <- as.data.frame(DE_results)  # convert to data frame
 
 DE_results <- DE_results %>%
-  dplyr::rename(target_ensembl = V1)
+  dplyr::rename(target_ensembl = ensembl.TE)
 head(DE_results)
 
 # this shows that out of 185 DE genes in the dataset, just 100 of them were validated miRNA targets
@@ -55,7 +58,8 @@ DE_validated <- semi_join(miRNA_targets, DE_results, by = "target_ensembl") %>%
   distinct(target_ensembl, .keep_all = TRUE)
 
 # Save this 
-#write.csv(DE_validated, file = "./3_results/oct_multimiR_DE_targets_of_DE_miRNA.csv")
+#write.csv(DE_validated, file = "./3_results/oct_multimiR_DE_targets_of_DE_mature_miRNA.csv")
+
 
 ## KEGG and GO-ORA (step 3)
 
@@ -171,6 +175,7 @@ enrichplot::dotplot(go_enrich)
 #  dpi = 300             # resolution (dots per inch)
 #)
 
+
 ######## Adding in a volcano plot
 library(ggplot2)
 
@@ -181,8 +186,8 @@ DE_results <- DE_results %>%
 
 DE_results <- DE_results %>%
   dplyr::mutate(sign_DE = if_else(log2FoldChange > 0, 
-                           "Upregulated", 
-                           "Downregulated"))
+                                  "Upregulated", 
+                                  "Downregulated"))
 
 DE_results <- DE_results %>% 
   dplyr::mutate(log_padj = -log10(padj))
@@ -228,12 +233,3 @@ plot_1 <- x %>%
 
 print(plot_1)
 #ggsave("./2_figures/DE_targets_of_DE_miRNAs.png", plot = plot_1, width = 20, height = 15, units = "cm", dpi = 300)
-
-
-
-
-
-
-
-
-
